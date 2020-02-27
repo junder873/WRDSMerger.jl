@@ -2,3 +2,14 @@ name = "WRDSMerger"
 uuid = "59d27aa3-834e-4232-9046-52ef43e86786"
 authors = ["junder873 <junder873@gmail.com>"]
 version = "0.1.0"
+
+[deps]
+ODBC = "be6f12e9-ca4f-5eb2-a339-a4f995cc0291"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+IndexedTables = "6deec6e2-d858-57c5-ab9b-e6ca5bd20e43"
+
+[compat]
+julia = "1"
+DataFrames = "0.20"
+ODBC = "0.8"
+IndexedTables "0.12"

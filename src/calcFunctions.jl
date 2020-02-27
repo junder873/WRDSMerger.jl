@@ -26,9 +26,11 @@ function calculateCARsingle(dsn,
     rename!(crsp, :date => :retDate)
     rename!(crsp, Symbol(timeframe.marketReturn) => :retm)
 
-    df = join(df, crsp, on=:permno, kind=:left)
+    df = myjoin(df, crsp)
 
-    df = df[.&(df[:, :dateStart] .<= df[:, :retDate], df[:, :dateEnd] .>= df[:, :retDate]), :]
+    #df = join(df, crsp, on=:permno, kind=:left)
+
+    #df = df[.&(df[:, :dateStart] .<= df[:, :retDate], df[:, :dateEnd] .>= df[:, :retDate]), :]
     df[!, :businessDays] = bdayscount(:USNYSE, df[:, :dateStart], df[:, :dateEnd]) .+ 1
     select!(df, Not([:dateStart, :dateEnd, :retDate]))
     aggCols = [:permno, :cusip, :date, :businessDays]

@@ -91,3 +91,27 @@ function getCrspNames(dsn, df, col, ignore)
     select!(df, Not([:namedt, :nameenddt]))
     return df
 end
+
+function myJoin(df1::DataFrame, df2::DataFrame)
+    t = ndsparse(
+        (permno = df2[:, :permno], retDate = df2[:, :retDate]),
+        (index = 1:size(df2, 1),),
+    )
+    ret = DataFrame(index1 = Int[], index2 = Int[])
+    for i = 1:size(df1, 1)
+        res = t[
+            df1[i, :permno],
+            collect(df1[i, :dateStart]:Day(1):df1[i, :dateEnd])
+        ]
+        for v in rows(res)
+            push!(ret, (i, v.index))
+        end
+    end
+    df1[!, :index1] = 1:size(df1, 1)
+    df2[!, :index2] = 1:size(df2, 1)
+    df1 = join(df1, ret, on=:index1, kind=:left)
+    select!(df1, Not(:permno))
+    df1 = join(df1, df2, on=:index2, kind=:left)
+    select!(df1, Not([:index1, :index2]))
+    return df1
+end
