@@ -6,10 +6,43 @@ struct retTimeframe
     marketReturn::String
 end
 
+struct ffMethod
+    subtraction::Int
+    addition::Int
+    maxRelativeToMin::Bool
+    businessDays::Tuple{Bool, Bool}
+    monthPeriod::Tuple{Bool, Bool}
+    rf::Symbol
+    funSymbols::Array{Symbol}
+    dfData::DataFrame
+    minObs::Int
+end
+
+function setFFMethod(
+    subtraction::Int,
+    addition::Int,
+    df::DataFrame;
+    maxRelativeToMin::Bool = true,
+    businessDays::Union{Bool, Tuple{Bool, Bool}} = false,
+    monthPeriod::Union{Bool, Tuple{Bool, Bool}} = false,
+    rf::Symbol = :rf,
+    funSymbols::Array{Symbol} = [:mktrf, :smb, :hml],
+    minObs::Int = 15
+    )
+    if typeof(businessDays) == Bool
+        businessDays = (businessDays, businessDays)
+    end
+    if typeof(monthPeriod) == Bool
+        monthPeriod = (monthPeriod, monthPeriod)
+    end
+    return ffMethod(subtraction, addition, maxRelativeToMin, businessDays, monthPeriod, rf, funSymbols, df, minObs)
+end
+
 function calculateDays(dates::Array{Date},
     businessDays::Bool,
     change::Int,
-    month::Bool
+    month::Bool;
+    includeFirstBDay::Bool = false
 )
     newDates = Date[]
     BusinessDays.initcache(:USNYSE)
@@ -19,7 +52,7 @@ function calculateDays(dates::Array{Date},
             newDates = dates .+ Dates.Month(change)
             newDates = tobday.(:USNYSE, newDates, forward=false)
         else
-            newDates = advancebdays.(:USNYSE, dates, change)
+            newDates = advancebdays.(:USNYSE, dates, change - includeFirstBDay)
         end
     else
         if month
@@ -69,6 +102,18 @@ function nameConvention(timeframe::retTimeframe)
     return join(s, "_")
 end
 
+function setNewDate(col1, col2)
+    ret = Date[]
+    for i in 1:length(col1)
+        if typeof(col1[i]) == Missing
+            push!(ret, col2[i])
+        else
+            push!(ret, col1[i])
+        end
+    end
+    return ret
+end
+
 function getCrspNames(dsn, df, col, ignore)
     permno::Array{<:Number} = Int[]
     ncusip::Array{String} = String[]
@@ -87,7 +132,9 @@ function getCrspNames(dsn, df, col, ignore)
         end
     end
     df = join(df, crsp, on=col, kind=:left)
-    df = df[.&(df[:, :date] .>= df[:, :namedt], df[:, :date] .<= df[:, :nameenddt]), :]
+    df[!, :namedt] = setNewDate(df[:, :namedt], df[:, :date])
+    df[!, :nameenddt] = setNewDate(df[:, :nameenddt], df[:, :date])
+    df = df[df[:, :namedt] .<= df[:, :date] .<= df[:, :nameenddt], :]
     select!(df, Not([:namedt, :nameenddt]))
     return df
 end

@@ -161,6 +161,7 @@ function crspData(dsn,
                             """
             push!(query, temp_query)
         end
+
         crsp = ODBC.query(dsn, join(query, " UNION "));
     end
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);

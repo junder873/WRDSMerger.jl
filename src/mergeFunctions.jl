@@ -27,6 +27,12 @@ function compustatCrspLink(dsn;
                             from crsp_a_ccm.ccmxpf_lnkhist
                             where lpermno IS NOT NULL
                             """
+    elseif length(gvkey) > 100 || length(lpermno) > 100 # If a lot of data, get all of it
+        query = """
+                select distinct $colString
+                from crsp_a_ccm.ccmxpf_lnkhist
+                where lpermno IS NOT NULL
+                """
         
     else
         if length(gvkey) > 0
@@ -105,7 +111,9 @@ function addIdentifiers(dsn,
         if :permno ∉ names(df) && :cusip ∉ names(df) && :ncusip ∉ names(df)
             comp = unique(compustatCrspLink(dsn, gvkey=df[:, :gvkey]))
             df = join(df, comp, on=:gvkey, kind=:left)
-            df = df[.&(df[:, :date] .>= df[:, :linkdt], df[:, :date] .<= df[:, :linkenddt]), :]
+            df[!, :linkdt] = coalesce.(df[:, :linkdt], Dates.today())
+            df[!, :linkenddt] = coalesce.(df[:, :linkenddt], Dates.today())
+            df = df[df[:, :linkdt] .<= df[:, :date] .<= df[:, :linkenddt], :]
             select!(df, Not([:linkdt, :linkenddt]))
             df[!, :permno] = coalesce.(df[:, :permno])
         end

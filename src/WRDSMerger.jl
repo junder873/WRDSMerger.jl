@@ -10,8 +10,8 @@ using DataFrames
 using Dates
 using BusinessDays
 using Statistics
-using CSV
 using IndexedTables: ndsparse, rows
+using FixedEffectModels
 
 ##############################################################################
 ##
@@ -23,7 +23,7 @@ export addIdentifiers, compustatCrspLink,
     getCompData,
     crspData, crspWholeMarket, crspStocknames,
     calculateCAR,
-    setRetTimeframe, retTimeframe
+    setRetTimeframe, retTimeframe, setFFMethod, myJoin
 
 ##############################################################################
 ##

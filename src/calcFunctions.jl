@@ -26,7 +26,7 @@ function calculateCARsingle(dsn,
     rename!(crsp, :date => :retDate)
     rename!(crsp, Symbol(timeframe.marketReturn) => :retm)
 
-    df = myjoin(df, crsp)
+    df = myJoin(df, crsp)
 
     #df = join(df, crsp, on=:permno, kind=:left)
 
@@ -87,4 +87,83 @@ function calculateCAR(dsn,
         df = calculateCARsingle(dsn, df, timeframes)
         return df
     end
+end
+
+function calculateCAR(
+    dsn,
+    df::DataFrame,
+    timeframe::retTimeframe,
+    method::ffMethod
+    )
+    for col in [:date]
+        if col ∉ names(df)
+            println("$(String(col)) must be in the DataFrame")
+            return 0
+        end
+    end
+    if :permno ∉ names(df) && :cusip ∉ names(df)
+        println("DataFrame must include cusip or permno")
+        return 0
+    end
+    df = copy(df)
+    if :cusip in names(df) && :permno ∉ names(df)
+        dfNames = crspStocknames(dsn, cusip=unique(df[:, :cusip]), cols=["permno", "cusip"])
+        df = join(df, unique(dfNames[:, [:permno, :cusip]]), on=:cusip, kind=:left)
+    elseif :cusip ∉ names(df) && :permno in names(df)
+        dfNames = crspStocknames(dsn, permno=unique(df[:, :permno]), cols=["permno", "cusip"])
+        df = join(df, unique(dfNames[:, [:permno, :cusip]]), on=:permno, kind=:left)
+    end
+
+
+    df[!, :dateStart] = calculateDays(df[:, :date], method.businessDays[1], method.subtraction, method.monthPeriod[1])
+    if method.maxRelativeToMin
+        df[!, :dateEnd] = calculateDays(df[:, :dateStart], method.businessDays[2], method.addition, method.monthPeriod[2], includeFirstBDay=true)
+    else
+        df[!, :dateEnd] = calculateDays(df[:, :date], method.businessDays[2], method.addition, method.monthPeriod[2])
+    end
+
+    dfCrsp = crspData(dsn, df, columns=["ret"])
+    dfCrsp = join(dfCrsp, method.dfData, on=:date, kind=:left)
+    dfCrsp[!, :retrf] = dfCrsp[:, :ret] .- dfCrsp[:, method.rf]
+
+    tempSymbols = vcat([:retrf], method.funSymbols)
+
+    crsp = ndsparse(
+        (
+            permno=dfCrsp[:, :permno],
+            date=dfCrsp[:, :date]
+        ),
+        NamedTuple{tuple(tempSymbols...)}([dfCrsp[:, x] for x in tempSymbols])
+    )
+    BusinessDays.initcache(:USNYSE)
+
+    abnRet = Union{Float64, Missing}[]
+    obs = Int[]
+    for i in 1:size(df, 1)
+        f = term(:retrf) ~ sum(term.(method.funSymbols))
+        x = crsp[df[i, :permno], collect(df[i, :dateStart]:Day(1):df[i, :dateEnd])]
+        if length(x) < method.minObs
+            push!(obs, length(x))
+            push!(abnRet, missing)
+            continue
+        end
+        rr = reg(x, f, save=true)
+        push!(obs, rr.nobs)
+        index1 = bdayscount(:USNYSE, df[i, :dateStart], df[i, :date]) + isbday(:USNYSE, df[i, :dateStart])
+        if timeframe.businessDays[1]
+            index1 = index1 + timeframe.subtraction
+        else
+            index1 = index1 + bdayscount(:USNYSE, df[i, :date], df[i, :date] .+ Dates.Day(timeframe.subtraction))
+        end
+        index2 = bdayscount(:USNYSE, df[i, :dateStart], df[i, :date]) + isbday(:USNYSE, df[i, :dateStart])
+        if timeframe.businessDays[2]
+            index2 = index2 + timeframe.addition
+        else
+            index2 = index2 = bdayscount(:USNYSE, df[i, :date], df[i, :date] .+ Dates.Day(timeframe.addition))
+        end
+        push!(abnRet, sum(rr.augmentdf[index1:index2, :residuals]))
+    end
+    df[!, :abnRet] = abnRet
+    df[!, :obs] = obs
+    return df
 end
