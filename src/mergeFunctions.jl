@@ -158,3 +158,100 @@ function addIdentifiers(dsn,
     end
     return df
 end
+
+function ibesCrspLink(dsn)
+    query = """
+        SELECT * FROM crsp.stocknames
+    """
+    dfStocknames = ODBC.query(dsn, query);
+    query = """
+        SELECT * FROM ibes.idsum WHERE usfirm=1
+    """
+    dfIbesNames = ODBC.query(dsn, query);
+    dfIbesNames[!, :sdates] = Dates.Date.(dfIbesNames.sdates)
+    for col in [:namedt, :nameenddt, :st_date, :end_date]
+        dfStocknames[!, col] = Dates.Date.(dfStocknames[:, col])
+    end
+
+    dfIbesNamesTemp = unique(dfIbesNames[:, [:ticker, :cusip, :cname, :sdates]])
+    dfStocknamesTemp = unique(dfStocknames[:, [:permno, :ncusip, :comnam, :namedt, :nameenddt]])
+    dropmissing!(dfStocknamesTemp, :ncusip)
+
+    dfTemp = aggregate(dfIbesNames[:, [:ticker, :cusip, :sdates]], [:ticker, :cusip], [minimum, maximum])
+    dfIbesNamesTemp = join(dfIbesNamesTemp, dfTemp, on=[:ticker, :cusip], kind=:left)
+    dfIbesNamesTemp = dfIbesNamesTemp[dfIbesNamesTemp.sdates .== dfIbesNamesTemp.sdates_maximum, :]
+    dropmissing!(dfIbesNamesTemp, :cname)
+
+    dfStocknamesTemp = aggregate(dfStocknamesTemp, [:permno, :ncusip, :comnam], [minimum, maximum])
+    select!(dfStocknamesTemp, Not([:namedt_maximum, :nameenddt_minimum]))
+    sort!(dfStocknamesTemp, [:permno, :ncusip, :namedt_minimum])
+    dfStocknamesTemp = vcat([i[[end], :] for i in groupby(dfStocknamesTemp, [:permno, :ncusip])]...)
+
+
+    dfLink1 = join(dfIbesNamesTemp, dfStocknamesTemp, on=[:cusip => :ncusip])
+    dfLink1[!, :nameDist] = [compare(dfLink1.cname[i], dfLink1.comnam[i], Levenshtein()) for i in 1:size(dfLink1, 1)]
+    dfLink1[!, :score] .= 3
+
+    minimum_ratio = quantile(dfLink1.nameDist, .1)
+    for i in 1:size(dfLink1, 1)
+        between = dfLink1.namedt_minimum[i] <= dfLink1.sdates_maximum[i] && dfLink1.nameenddt_maximum[i] >= dfLink1.sdates_minimum[i]
+        namesMatch = dfLink1.nameDist[i] >= minimum_ratio
+        dfLink1[i, :score] = if between && namesMatch
+            0
+        elseif between
+            1
+        elseif namesMatch
+            2
+        else
+            3
+        end
+    end
+
+
+
+    dfTemp = unique(dfLink1[:, [:ticker]])
+    dfTemp[!, :match] .= 1
+    dfMissings = join(dfIbesNames, dfTemp, on=:ticker, kind=:left)
+    dfMissings = dfMissings[typeof.(dfMissings.match) .== Missing, :]
+    select!(dfMissings, Not(:match))
+    dfIbesNamesTemp = dfMissings[:, [:ticker, :cname, :oftic, :sdates, :cusip]]
+    dfTemp = aggregate(dfIbesNames[:, [:ticker, :oftic, :sdates]], [:ticker, :oftic], [minimum, maximum])
+    dfIbesNamesTemp = join(dfIbesNamesTemp, dfTemp, on=[:ticker, :oftic], kind=:left)
+    dfIbesNamesTemp = dfIbesNamesTemp[dfIbesNamesTemp.sdates .== dfIbesNamesTemp.sdates_maximum, :]
+    dropmissing!(dfIbesNamesTemp, :cname)
+
+    dfStocknamesTemp = dfStocknames[:, [:ticker, :comnam, :permno, :ncusip, :namedt, :nameenddt]]
+    dropmissing!(dfStocknamesTemp, :ticker)
+    dfStocknamesTemp = aggregate(dfStocknamesTemp, [:permno, :ticker, :ncusip, :comnam], [minimum, maximum])
+    select!(dfStocknamesTemp, Not([:namedt_maximum, :nameenddt_minimum]))
+    sort!(dfStocknamesTemp, [:permno, :ticker, :namedt_minimum])
+    dfStocknamesTemp = vcat([i[[end], :] for i in groupby(dfStocknamesTemp, [:permno, :ticker])]...)
+    rename!(dfStocknamesTemp, :ticker => :ticker_crsp)
+
+    dfLink2 = join(dfIbesNamesTemp, dfStocknamesTemp, on=[:oftic => :ticker_crsp])
+    dfLink2 = dfLink2[.&(dfLink2.sdates_maximum .>= dfLink2.namedt_minimum,
+                        dfLink2.sdates_minimum .<= dfLink2.nameenddt_maximum), :]
+    dfLink2[!, :nameDist] = [compare(dfLink2.cname[i], dfLink2.comnam[i], Levenshtein()) for i in 1:size(dfLink2, 1)]
+
+    dfLink2[!, :score] .= 6
+    for i in 1:size(dfLink2, 1)
+        cusipMatch = dfLink2[i, :cusip][1:6] == dfLink2[i, :ncusip][1:6]
+        namesMatch = dfLink2.nameDist[i] >= minimum_ratio
+        dfLink2[i, :score] = if cusipMatch && namesMatch
+            0
+        elseif cusipMatch
+            4
+        elseif namesMatch
+            5
+        else
+            6
+        end
+    end
+
+    dfOutput = unique(vcat(dfLink1[:, [:ticker, :permno, :score]], dfLink2[:, [:ticker, :permno, :score]]))
+    dropmissing!(dfOutput)
+    sort!(dfOutput, [:ticker, :permno, :score])
+    rename!(dfOutput, :score => :matchQuality)
+    dfOutput = vcat([i[[1], :] for i in groupby(dfOutput, [:ticker, :permno])]...)
+    return dfOutput
+end
