@@ -54,7 +54,7 @@ function getCompData(dsn,
     for i in 1:size(df, 1)
         temp_query = """
                         (select $colString
-                        from comp.$fund
+                        from compa.$fund
                         where datadate between '$(df[i, :dateStart])' and '$(df[i, :dateEnd])' and gvkey = '$(df[i, :gvkey])' $filterString)
                         """
         push!(query, temp_query)
@@ -84,7 +84,7 @@ function getCompData(dsn,
     filterString = createFilter(filters)
     query = """
         select $colString
-        from comp.$fund
+        from compa.$fund
         where datadate between '$dateStart' and '$dateEnd' $filterString"""
     
     comp = ODBC.query(dsn, query);
