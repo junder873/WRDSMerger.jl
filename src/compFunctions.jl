@@ -38,9 +38,9 @@ function getCompData(dsn,
     filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict("datafmt" => "STD", "indfmt" => "INDL", "consol" => "C", "popsrc" => "D"),
     columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"])
 
-    for col in [:gvkey, :dateStart, :dateEnd]
+    for col in ["gvkey", "dateStart", "dateEnd"]
         if col ∉ names(df)
-            println("$(String(col)) must be in the DataFrame")
+            println("$col must be in the DataFrame")
             return 0
         end
     end
@@ -60,7 +60,7 @@ function getCompData(dsn,
         push!(query, temp_query)
     end
 
-    comp = ODBC.query(dsn, join(query, " UNION "));
+    comp = DBInterface.execute(dsn, join(query, " UNION ")) |> DataFrame;
     comp[!, :datadate] = Dates.Date.(comp[:, :datadate]);
 
     return comp
@@ -87,7 +87,7 @@ function getCompData(dsn,
         from compa.$fund
         where datadate between '$dateStart' and '$dateEnd' $filterString"""
     
-    comp = ODBC.query(dsn, query);
+    comp = DBInterface.execute(dsn, query) |> DataFrame;
     comp[!, :datadate] = Dates.Date.(comp[:, :datadate])
 
     return comp

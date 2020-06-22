@@ -66,7 +66,7 @@ function crspStocknames(dsn;
         end
     end
 
-    stocknames = ODBC.query(dsn, query);
+    stocknames = DBInterface.execute(dsn, query) |> DataFrame;
     if "namedt" in cols
         stocknames[!, :namedt] = Dates.Date.(stocknames[:, :namedt])
     end
@@ -102,7 +102,7 @@ function crspWholeMarket(dsn;
                         from crsp.$stockFile
                         where date between '$dateStart' and '$dateEnd'
                         """
-    crsp = ODBC.query(dsn, query);
+    crsp = DBInterface.execute(dsn, query) |> DataFrame;
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
     return crsp
 end
@@ -112,9 +112,9 @@ function crspData(dsn,
     stockFile = "dsf",
     columns = ["ret", "vol", "shrout"])
 
-    for col in [:permno, :dateStart, :dateEnd]
+    for col in ["permno", "dateStart", "dateEnd"]
         if col ∉ names(df)
-            println("$(String(col)) must be in the DataFrame")
+            println("$col must be in the DataFrame")
             return 0
         end
     end
@@ -143,14 +143,14 @@ function crspData(dsn,
                     from crsp.$stockFile
                     where date between '$(minimum(df[:, :dateStart]))' and '$(maximum(df[:, :dateEnd]))' and permno IN ($permnos)
                 """
-        crsp = ODBC.query(dsn, query)
+        crsp = DBInterface.execute(dsn, query) |> DataFrame
     elseif 100 < size(df, 1)
         query = """
             select $colString
             from crsp.$stockFile
             where date between '$(minimum(df[:, :dateStart]))' and '$(maximum(df[:, :dateEnd]))'
         """
-        crsp = ODBC.query(dsn, query)
+        crsp = DBInterface.execute(dsn, query) |> DataFrame
     else
         query = String[]
         for i in 1:size(df, 1)
@@ -162,8 +162,40 @@ function crspData(dsn,
             push!(query, temp_query)
         end
 
-        crsp = ODBC.query(dsn, join(query, " UNION "));
+        crsp = DBInterface.execute(dsn, join(query, " UNION ")) |> DataFrame;
     end
+    crsp[!, :date] = Dates.Date.(crsp[:, :date]);
+
+    return crsp
+end
+
+function crspData(
+    dsn,
+    s::Date,
+    e::Date;
+    stockFile = "dsf",
+    columns = ["ret", "vol", "shrout"]
+)
+    for col in ["permno", "date"]
+        if col ∉ columns
+            push!(columns, col)
+        end
+    end
+    colString = ""
+    for col in columns
+        if colString == ""
+            colString = col
+        else
+            colString = colString * ", " * col
+        end
+    end
+
+    query = """
+        select $colString
+        from crsp.$stockFile
+        where date between '$(s)' and '$(e)'
+    """
+    crsp = DBInterface.execute(dsn, query) |> DataFrame
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
 
     return crsp

@@ -19,7 +19,7 @@ function calculateCARsingle(dsn,
         dateEnd = maximum(df[:, :dateEnd]),
         col = timeframe.marketReturn)
 
-    crsp = join(crsp, crspM, on=:date, kind=:left)
+    crsp = leftjoin(crsp, crspM, on=:date)
     crsp[!, :car] = crsp[:, :ret] .- crsp[:, Symbol(timeframe.marketReturn)]
     crsp[!, :plus1] = crsp[:, :ret] .+ 1
     crsp[!, :plus1m] = crsp[:, Symbol(timeframe.marketReturn)] .+ 1
@@ -34,15 +34,17 @@ function calculateCARsingle(dsn,
     df[!, :businessDays] = bdayscount(:USNYSE, df[:, :dateStart], df[:, :dateEnd]) .+ 1
     select!(df, Not([:dateStart, :dateEnd, :retDate]))
     aggCols = [:permno, :cusip, :date, :businessDays]
-    if :name in names(df)
+    if "name" in names(df)
         push!(aggCols, :name)
     end
-    df2 = aggregate(df[:, vcat(aggCols, [:plus1, :plus1m])], aggCols, prod)
+    gd = groupby(df[:, vcat(aggCols, [:plus1, :plus1m])], aggCols)
+    df2 = combine(gd, valuecols(gd) .=> prod)
     df2[!, :bhar] = df2[:, :plus1_prod] .- df2[:, :plus1m_prod]
     select!(df2, Not([:plus1_prod, :plus1m_prod]))
     select!(df, Not([:plus1, :plus1m]))
-    df = aggregate(df, aggCols, sum)
-    df = join(df, df2, on=aggCols, kind=:left)
+    gd = groupby(df, aggCols)
+    df = combine(gd, valuecols(gd) .=> sum)
+    df = leftjoin(df, df2, on=aggCols)
     return df
 end
 
@@ -50,13 +52,13 @@ function calculateCAR(dsn,
     df::DataFrame,
     timeframes::Union{Array{retTimeframe},retTimeframe}
     )
-    for col in [:date]
+    for col in ["date"]
         if col ∉ names(df)
-            println("$(String(col)) must be in the DataFrame")
+            println("$col must be in the DataFrame")
             return 0
         end
     end
-    if :permno ∉ names(df) && :cusip ∉ names(df)
+    if "permno" ∉ names(df) && "cusip" ∉ names(df)
         println("DataFrame must include cusip or permno")
         return 0
     end
@@ -64,12 +66,12 @@ function calculateCAR(dsn,
 
     df = copy(df)
 
-    if :cusip in names(df) && :permno ∉ names(df)
+    if "cusip" in names(df) && "permno" ∉ names(df)
         dfNames = crspStocknames(dsn, cusip=unique(df[:, :cusip]), cols=["permno", "cusip"])
-        df = join(df, unique(dfNames[:, [:permno, :cusip]]), on=:cusip, kind=:left)
-    elseif :cusip ∉ names(df) && :permno in names(df)
+        df = leftjoin(df, unique(dfNames[:, [:permno, :cusip]]), on=:cusip)
+    elseif "cusip" ∉ names(df) && "permno" in names(df)
         dfNames = crspStocknames(dsn, permno=unique(df[:, :permno]), cols=["permno", "cusip"])
-        df = join(df, unique(dfNames[:, [:permno, :cusip]]), on=:permno, kind=:left)
+        df = leftjoin(df, unique(dfNames[:, [:permno, :cusip]]), on=:permno)
     end
 
     if typeof(timeframes) <: Array
@@ -95,23 +97,23 @@ function calculateCAR(
     timeframe::retTimeframe,
     method::ffMethod
     )
-    for col in [:date]
+    for col in ["date"]
         if col ∉ names(df)
-            println("$(String(col)) must be in the DataFrame")
+            println("$col must be in the DataFrame")
             return 0
         end
     end
-    if :permno ∉ names(df) && :cusip ∉ names(df)
+    if "permno" ∉ names(df) && "cusip" ∉ names(df)
         println("DataFrame must include cusip or permno")
         return 0
     end
     df = copy(df)
-    if :cusip in names(df) && :permno ∉ names(df)
+    if "cusip" in names(df) && "permno" ∉ names(df)
         dfNames = crspStocknames(dsn, cusip=unique(df[:, :cusip]), cols=["permno", "cusip"])
-        df = join(df, unique(dfNames[:, [:permno, :cusip]]), on=:cusip, kind=:left)
-    elseif :cusip ∉ names(df) && :permno in names(df)
+        df = leftjoin(df, unique(dfNames[:, [:permno, :cusip]]), on=:cusip)
+    elseif "cusip" ∉ names(df) && "permno" in names(df)
         dfNames = crspStocknames(dsn, permno=unique(df[:, :permno]), cols=["permno", "cusip"])
-        df = join(df, unique(dfNames[:, [:permno, :cusip]]), on=:permno, kind=:left)
+        df = leftjoin(df, unique(dfNames[:, [:permno, :cusip]]), on=:permno)
     end
 
 
@@ -123,7 +125,7 @@ function calculateCAR(
     end
 
     dfCrsp = crspData(dsn, df, columns=["ret"])
-    dfCrsp = join(dfCrsp, method.dfData, on=:date, kind=:left)
+    dfCrsp = leftjoin(dfCrsp, method.dfData, on=:date)
     dfCrsp[!, :retrf] = dfCrsp[:, :ret] .- dfCrsp[:, method.rf]
 
     tempSymbols = vcat([:retrf], method.funSymbols)

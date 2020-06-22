@@ -127,11 +127,11 @@ function getCrspNames(dsn, df, col, ignore)
     end
     crsp = unique(crspStocknames(dsn, permno=permno, cusip=cusip, ncusip=ncusip, cols=["permno", "ncusip", "cusip", "namedt", "nameenddt"]))
     for x in ignore
-        if x in names(df) # Removes the column if it would create a duplicate
+        if String(x) in names(df) # Removes the column if it would create a duplicate
             select!(crsp, Not(x))
         end
     end
-    df = join(df, crsp, on=col, kind=:left)
+    df = leftjoin(df, crsp, on=col)
     df[!, :namedt] = setNewDate(df[:, :namedt], df[:, :date])
     df[!, :nameenddt] = setNewDate(df[:, :nameenddt], df[:, :date])
     df = df[df[:, :namedt] .<= df[:, :date] .<= df[:, :nameenddt], :]
@@ -156,9 +156,9 @@ function myJoin(df1::DataFrame, df2::DataFrame)
     end
     df1[!, :index1] = 1:size(df1, 1)
     df2[!, :index2] = 1:size(df2, 1)
-    df1 = join(df1, ret, on=:index1, kind=:left)
+    df1 = leftjoin(df1, ret, on=:index1)
     select!(df1, Not(:permno))
-    df1 = join(df1, df2, on=:index2, kind=:left)
+    df1 = leftjoin(df1, df2, on=:index2)
     select!(df1, Not([:index1, :index2]))
     return df1
 end

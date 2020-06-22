@@ -60,7 +60,7 @@ function compustatCrspLink(dsn;
         end
     end
 
-    dfLink = ODBC.query(dsn, query);
+    dfLink = DBInterface.execute(dsn, query) |> DataFrame;
     if "linkdt" in cols
         dfLink[!, :linkdt] = Dates.Date.(dfLink[:, :linkdt])
     end
@@ -82,35 +82,35 @@ function addIdentifiers(dsn,
     permno::Bool = false
 )
 
-    if :date ∉ names(df)
+    if "date" ∉ names(df)
         println("DataFrame must include a date column")
         return 0
     end
-    if sum([x in names(df) for x in [:ncusip, :cusip, :gvkey, :permno]]) == 0
+    if sum([x in names(df) for x in ["ncusip", "cusip", "gvkey", "permno"]]) == 0
         println("DataFrame must include identifying column: cusip, ncusip, gvkey, or permno")
         return 0
     end
-    if sum([x in names(df) for x in [:ncusip, :cusip, :gvkey, :permno]]) > 1
+    if sum([x in names(df) for x in ["ncusip", "cusip", "gvkey", "permno"]]) > 1
         println("Function has a preset order on which key will be used first, it is optimal to start with one key")
     end
 
-    if :ncusip in names(df) && !ncusip
+    if "ncusip" in names(df) && !ncusip
         ncusip = true
     end
-    if :cusip in names(df) && !cusip
+    if "cusip" in names(df) && !cusip
         cusip = true
     end
-    if :gvkey in names(df) && !gvkey
+    if "gvkey" in names(df) && !gvkey
         gvkey = true
     end
-    if :permno in names(df) && !permno
+    if "permno" in names(df) && !permno
         permno = true
     end
 
-    if :gvkey in names(df) # If gvkey exists and no other identifier does, permno must be fetched
-        if :permno ∉ names(df) && :cusip ∉ names(df) && :ncusip ∉ names(df)
+    if "gvkey" in names(df) # If gvkey exists and no other identifier does, permno must be fetched
+        if "permno" ∉ names(df) && "cusip" ∉ names(df) && "ncusip" ∉ names(df)
             comp = unique(compustatCrspLink(dsn, gvkey=df[:, :gvkey]))
-            df = join(df, comp, on=:gvkey, kind=:left)
+            df = leftjoin(df, comp, on=:gvkey)
             df[!, :linkdt] = coalesce.(df[:, :linkdt], Dates.today())
             df[!, :linkenddt] = coalesce.(df[:, :linkenddt], Dates.today())
             df = df[df[:, :linkdt] .<= df[:, :date] .<= df[:, :linkenddt], :]
@@ -119,14 +119,14 @@ function addIdentifiers(dsn,
         end
     end
 
-    if :ncusip in names(df) || :cusip in names(df)
-        if :permno ∉ names(df) # to fetch either cusip, ncusip, or gvkey, permno is either necessary or trivial
-            if :cusip in names(df)
+    if "ncusip" in names(df) || "cusip" in names(df)
+        if "permno" ∉ names(df) # to fetch either cusip, ncusip, or gvkey, permno is either necessary or trivial
+            if "cusip" in names(df)
                 df = getCrspNames(dsn, df, :cusip, [:ncusip])
             else
                 df = getCrspNames(dsn, df, :ncusip, [:cusip])
             end
-            for col in [:permno, :cusip, :ncusip]
+            for col in ["permno", "cusip", "ncusip"]
                 if col in names(df)
                     df[!, col] = coalesce.(df[:, col])
                 end
@@ -134,24 +134,24 @@ function addIdentifiers(dsn,
         end
     end
                 
-    if :permno in names(df)
-        if (ncusip && :ncusip ∉ names(df)) || (cusip && :cusip ∉ names(df))
+    if "permno" in names(df)
+        if (ncusip && "ncusip" ∉ names(df)) || (cusip && "cusip" ∉ names(df))
             df = getCrspNames(dsn, df, :permno, [:ncusip, :cusip])
         end
-        if gvkey && :gvkey ∉ names(df)
+        if gvkey && "gvkey" ∉ names(df)
             comp = unique(compustatCrspLink(dsn, lpermno=df[:, :permno]))
-            df = join(df, comp, on=:permno, kind=:left)
+            df = leftjoin(df, comp, on=:permno)
             df = df[.&(df[:, :date] .>= df[:, :linkdt], df[:, :date] .<= df[:, :linkenddt]), :]
             select!(df, Not([:linkdt, :linkenddt]))
             
         end
     end
-    for pair in [(ncusip, :ncusip), (cusip, :cusip), (gvkey, :gvkey), (permno, :permno)]
+    for pair in [(ncusip, "ncusip"), (cusip, "cusip"), (gvkey, "gvkey"), (permno, "permno")]
         if !pair[1] && pair[2] in names(df)
             select!(df, Not(pair[2]))
         end
     end
-    for col in [:permno, :cusip, :ncusip, :gvkey]
+    for col in ["permno", "cusip", "ncusip", "gvkey"]
         if col in names(df)
             df[!, col] = coalesce.(df[:, col])
         end
@@ -163,11 +163,11 @@ function ibesCrspLink(dsn)
     query = """
         SELECT * FROM crsp.stocknames
     """
-    dfStocknames = ODBC.query(dsn, query);
+    dfStocknames = DBInterface.execute(dsn, query) |> DataFrame;
     query = """
         SELECT * FROM ibes.idsum WHERE usfirm=1
     """
-    dfIbesNames = ODBC.query(dsn, query);
+    dfIbesNames = DBInterface.execute(dsn, query) |> DataFrame;
     dfIbesNames[!, :sdates] = Dates.Date.(dfIbesNames.sdates)
     for col in [:namedt, :nameenddt, :st_date, :end_date]
         dfStocknames[!, col] = Dates.Date.(dfStocknames[:, col])
@@ -177,18 +177,19 @@ function ibesCrspLink(dsn)
     dfStocknamesTemp = unique(dfStocknames[:, [:permno, :ncusip, :comnam, :namedt, :nameenddt]])
     dropmissing!(dfStocknamesTemp, :ncusip)
 
-    dfTemp = aggregate(dfIbesNames[:, [:ticker, :cusip, :sdates]], [:ticker, :cusip], [minimum, maximum])
-    dfIbesNamesTemp = join(dfIbesNamesTemp, dfTemp, on=[:ticker, :cusip], kind=:left)
+    gd = groupby(dfIbesNames[:, [:ticker, :cusip, :sdates]], [:ticker, :cusip])
+    dfTemp = combine(gd, valuecols(gd) .=> [minimum, maximum])
+    dfIbesNamesTemp = leftjoin(dfIbesNamesTemp, dfTemp, on=[:ticker, :cusip])
     dfIbesNamesTemp = dfIbesNamesTemp[dfIbesNamesTemp.sdates .== dfIbesNamesTemp.sdates_maximum, :]
     dropmissing!(dfIbesNamesTemp, :cname)
 
-    dfStocknamesTemp = aggregate(dfStocknamesTemp, [:permno, :ncusip, :comnam], [minimum, maximum])
-    select!(dfStocknamesTemp, Not([:namedt_maximum, :nameenddt_minimum]))
+    gd = groupby(dfStocknamesTemp, [:permno, :ncusip, :comnam])
+    dfStocknamesTemp = combine(gd, :namedt => minimum, :nameenddt => maximum)
     sort!(dfStocknamesTemp, [:permno, :ncusip, :namedt_minimum])
     dfStocknamesTemp = vcat([i[[end], :] for i in groupby(dfStocknamesTemp, [:permno, :ncusip])]...)
 
 
-    dfLink1 = join(dfIbesNamesTemp, dfStocknamesTemp, on=[:cusip => :ncusip])
+    dfLink1 = innerjoin(dfIbesNamesTemp, dfStocknamesTemp, on=[:cusip => :ncusip])
     dfLink1[!, :nameDist] = [compare(dfLink1.cname[i], dfLink1.comnam[i], Levenshtein()) for i in 1:size(dfLink1, 1)]
     dfLink1[!, :score] .= 3
 
@@ -211,24 +212,26 @@ function ibesCrspLink(dsn)
 
     dfTemp = unique(dfLink1[:, [:ticker]])
     dfTemp[!, :match] .= 1
-    dfMissings = join(dfIbesNames, dfTemp, on=:ticker, kind=:left)
+    dfMissings = leftjoin(dfIbesNames, dfTemp, on=:ticker)
     dfMissings = dfMissings[typeof.(dfMissings.match) .== Missing, :]
     select!(dfMissings, Not(:match))
     dfIbesNamesTemp = dfMissings[:, [:ticker, :cname, :oftic, :sdates, :cusip]]
-    dfTemp = aggregate(dfIbesNames[:, [:ticker, :oftic, :sdates]], [:ticker, :oftic], [minimum, maximum])
-    dfIbesNamesTemp = join(dfIbesNamesTemp, dfTemp, on=[:ticker, :oftic], kind=:left)
+    gd = groupby(dfIbesNames[:, [:ticker, :oftic, :sdates]], [:ticker, :oftic])
+    dfTemp = combine(gd, valuecols(gd) .=> [minimum, maximum])
+    dfIbesNamesTemp = leftjoin(dfIbesNamesTemp, dfTemp, on=[:ticker, :oftic])
     dfIbesNamesTemp = dfIbesNamesTemp[dfIbesNamesTemp.sdates .== dfIbesNamesTemp.sdates_maximum, :]
     dropmissing!(dfIbesNamesTemp, :cname)
 
     dfStocknamesTemp = dfStocknames[:, [:ticker, :comnam, :permno, :ncusip, :namedt, :nameenddt]]
     dropmissing!(dfStocknamesTemp, :ticker)
-    dfStocknamesTemp = aggregate(dfStocknamesTemp, [:permno, :ticker, :ncusip, :comnam], [minimum, maximum])
+    gd = groupby(dfStocknamesTemp, [:permno, :ticker, :ncusip, :comnam])
+    dfStocknamesTemp = combine(gd, :namedt => minimum, :nameenddt => maximum)
     select!(dfStocknamesTemp, Not([:namedt_maximum, :nameenddt_minimum]))
     sort!(dfStocknamesTemp, [:permno, :ticker, :namedt_minimum])
     dfStocknamesTemp = vcat([i[[end], :] for i in groupby(dfStocknamesTemp, [:permno, :ticker])]...)
     rename!(dfStocknamesTemp, :ticker => :ticker_crsp)
 
-    dfLink2 = join(dfIbesNamesTemp, dfStocknamesTemp, on=[:oftic => :ticker_crsp])
+    dfLink2 = innerjoin(dfIbesNamesTemp, dfStocknamesTemp, on=[:oftic => :ticker_crsp])
     dfLink2 = dfLink2[.&(dfLink2.sdates_maximum .>= dfLink2.namedt_minimum,
                         dfLink2.sdates_minimum .<= dfLink2.nameenddt_maximum), :]
     dfLink2[!, :nameDist] = [compare(dfLink2.cname[i], dfLink2.comnam[i], Levenshtein()) for i in 1:size(dfLink2, 1)]
