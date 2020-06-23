@@ -140,6 +140,8 @@ function getCrspNames(dsn, df, col, ignore)
 end
 
 function myJoin(df1::DataFrame, df2::DataFrame)
+    CSV.write("G:\\My Drive\\python\\tests\\carMerge1.csv", df1)
+    CSV.write("G:\\My Drive\\python\\tests\\carMerge2.csv", df2)
     t = ndsparse(
         (permno = df2[:, :permno], retDate = df2[:, :retDate]),
         (index = 1:size(df2, 1),),
@@ -159,6 +161,42 @@ function myJoin(df1::DataFrame, df2::DataFrame)
     df1 = leftjoin(df1, ret, on=:index1)
     select!(df1, Not(:permno))
     df1 = leftjoin(df1, df2, on=:index2)
+    select!(df1, Not([:index1, :index2]))
+    return df1
+end
+
+function dateRangeJoin(
+    df1::AbstractDataFrame,
+    df2::AbstractDataFrame;
+    on::Union{Array{Symbol}, Array{String}, Array{Union{Symbol, String}}} = Symbol[],
+    validate::Bool=false,
+    dateColMin::Union{String, Symbol} = "datemin",
+    dateColMax::Union{String, Symbol} = "datemax",
+    dateColTest::Union{String, Symbol} = "date"
+)
+    df1 = copy(df1)
+    df2 = copy(df2)
+    df2[!, :index2] = 1:size(df2, 1)
+    gdf2 = groupby(df2, on)
+    ret = DataFrame(index1 = Int[], index2 = Int[])
+    for i = 1:size(df1, 1)
+        temp = get(gdf2, NamedTuple(df1[i, on]), 0)
+        if temp == 0
+            continue
+        end
+        temp = temp[df1[i, dateColMin] .<= temp[:, dateColTest] .<= df1[i, dateColMax], :]
+        if validate && size(temp, 1) > 1
+            throw(ArgumentError("Merge key(s) in df2 are not unique. " *
+                            "First duplicate at row $(temp[1, :index2])"))
+        end
+        for row in eachrow(temp)
+            push!(ret, (i, row.index2))
+        end
+    end
+    df1[!, :index1] = 1:size(df1, 1)
+    df1 = leftjoin(df1, ret, on=:index1, validate=(true, validate))
+    select!(df2, Not(on))
+    df1 = leftjoin(df1, df2, on=:index2, validate=(false, validate))
     select!(df1, Not([:index1, :index2]))
     return df1
 end

@@ -13,6 +13,7 @@ using Statistics
 using IndexedTables: ndsparse, rows
 using FixedEffectModels
 using StringDistances
+using CSV
 
 ##############################################################################
 ##
@@ -24,7 +25,7 @@ export addIdentifiers, compustatCrspLink,
     getCompData,
     crspData, crspWholeMarket, crspStocknames,
     calculateCAR,
-    setRetTimeframe, retTimeframe, setFFMethod, myJoin,
+    setRetTimeframe, retTimeframe, setFFMethod, dateRangeJoin,
     ibesCrspLink
 
 ##############################################################################

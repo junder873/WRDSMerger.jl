@@ -26,7 +26,7 @@ function calculateCARsingle(dsn,
     rename!(crsp, :date => :retDate)
     rename!(crsp, Symbol(timeframe.marketReturn) => :retm)
 
-    df = myJoin(df, crsp)
+    df = dateRangeJoin(df, crsp, on=[:permno], dateColMin="dateStart", dateColMax="dateEnd", dateColTest="retDate")
 
     #df = join(df, crsp, on=:permno, kind=:left)
 

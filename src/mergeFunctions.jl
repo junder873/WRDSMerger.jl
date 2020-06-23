@@ -24,14 +24,20 @@ function compustatCrspLink(dsn;
     if sum(length.([gvkey, lpermno]) .> 0) == 0 # If no restrictions, get all data
         query = """
                             select distinct $colString
-                            from crsp_a_ccm.ccmxpf_lnkhist
-                            where lpermno IS NOT NULL
+                            from crsp_a_ccm.ccmxpf_linktable
+                            where lpermno IS NOT NULL AND
+                            linktype in ('LU', 'LC') AND
+                            linkprim in ('P', 'C') AND
+                            usedflag = 1
                             """
     elseif length(gvkey) > 100 || length(lpermno) > 100 # If a lot of data, get all of it
         query = """
                 select distinct $colString
-                from crsp_a_ccm.ccmxpf_lnkhist
-                where lpermno IS NOT NULL
+                from crsp_a_ccm.ccmxpf_linktable
+                where lpermno IS NOT NULL AND
+                linktype in ('LU', 'LC') AND
+                linkprim in ('P', 'C') AND
+                usedflag = 1
                 """
         
     else
@@ -40,8 +46,11 @@ function compustatCrspLink(dsn;
             for x in gvkey
                 temp_query = """
                                 (select $colString
-                                from crsp_a_ccm.ccmxpf_lnkhist
-                                where lpermno IS NOT NULL and gvkey = '$x')
+                                from crsp_a_ccm.ccmxpf_linktable
+                                where lpermno IS NOT NULL and gvkey = '$x' AND
+                                linktype in ('LU', 'LC') AND
+                                linkprim in ('P', 'C') AND
+                                usedflag = 1)
                                 """
                 push!(queryL, temp_query)
             end
@@ -51,8 +60,11 @@ function compustatCrspLink(dsn;
             for x in lpermno
                 temp_query = """
                                 (select $colString
-                                from crsp_a_ccm.ccmxpf_lnkhist
-                                where lpermno IS NOT NULL and lpermno = $x)
+                                from crsp_a_ccm.ccmxpf_linktable
+                                where lpermno IS NOT NULL and lpermno = $x AND
+                                linktype in ('LU', 'LC') AND
+                                linkprim in ('P', 'C') AND
+                                usedflag = 1)
                                 """
                 push!(queryL, temp_query)
             end
@@ -79,7 +91,8 @@ function addIdentifiers(dsn,
     ncusip::Bool = false,
     cusip::Bool = false,
     gvkey::Bool = false,
-    permno::Bool = false
+    permno::Bool = false,
+    forceUnique::Bool = false,
 )
 
     if "date" ∉ names(df)
@@ -110,12 +123,34 @@ function addIdentifiers(dsn,
     if "gvkey" in names(df) # If gvkey exists and no other identifier does, permno must be fetched
         if "permno" ∉ names(df) && "cusip" ∉ names(df) && "ncusip" ∉ names(df)
             comp = unique(compustatCrspLink(dsn, gvkey=df[:, :gvkey]))
-            df = leftjoin(df, comp, on=:gvkey)
             df[!, :linkdt] = coalesce.(df[:, :linkdt], Dates.today())
             df[!, :linkenddt] = coalesce.(df[:, :linkenddt], Dates.today())
-            df = df[df[:, :linkdt] .<= df[:, :date] .<= df[:, :linkenddt], :]
+            try
+                df = dateRangeJoin(df, comp, on=[:gvkey], dateColMin="linkdt", dateColMax="linkenddt", validate=true)
+            catch
+                if forceUnique
+                    sort!(df, :linkdt)
+                    gd = groupby(df, :gvkey)
+                    for g in gd
+                        if size(g, 1) == 1
+                            continue
+                        end
+                        for i in 1:size(g, 1)-1
+                            if g[i+1, :linkdt] <= g[i, :linkenddt]
+                                g[i+1, :linkdt] = g[i, :linkenddt] + Dates.Day(1)
+                                if g[i+1, :linkenddt] < g[i+1, :linkdt]
+                                    g[i+1, :linkenddt] = g[i+1, :linkdt]
+                                end
+                            end
+                        end
+                    end
+                else
+                    println("There are multiple PERMNOs per GVKEY, be careful on merging with other datasets")
+                    println("Pass forceUnique=true to the function to prevent this error")
+                end
+                df = dateRangeJoin(df, comp, on=[:gvkey], dateColMin="linkdt", dateColMax="linkenddt")
+            end
             select!(df, Not([:linkdt, :linkenddt]))
-            df[!, :permno] = coalesce.(df[:, :permno])
         end
     end
 
@@ -126,11 +161,7 @@ function addIdentifiers(dsn,
             else
                 df = getCrspNames(dsn, df, :ncusip, [:cusip])
             end
-            for col in ["permno", "cusip", "ncusip"]
-                if col in names(df)
-                    df[!, col] = coalesce.(df[:, col])
-                end
-            end
+            dropmissing!(df, ["permno", "cusip", "ncusip"])
         end
     end
                 
@@ -140,8 +171,31 @@ function addIdentifiers(dsn,
         end
         if gvkey && "gvkey" ∉ names(df)
             comp = unique(compustatCrspLink(dsn, lpermno=df[:, :permno]))
-            df = leftjoin(df, comp, on=:permno)
-            df = df[.&(df[:, :date] .>= df[:, :linkdt], df[:, :date] .<= df[:, :linkenddt]), :]
+            try
+                df = dateRangeJoin(comp, df, on=[:permno], dateColMin="linkdt", dateColMax="linkenddt", validate=true)
+            catch
+                if forceUnique
+                    sort!(comp, :linkdt)
+                    gd = groupby(comp, :permno)
+                    for g in gd
+                        if size(g, 1) == 1
+                            continue
+                        end
+                        for i in 1:size(g, 1)-1
+                            if g[i+1, :linkdt] <= g[i, :linkenddt]
+                                g[i+1, :linkdt] = g[i, :linkenddt] + Dates.Day(1)
+                                if g[i+1, :linkenddt] < g[i+1, :linkdt]
+                                    g[i+1, :linkenddt] = g[i+1, :linkdt]
+                                end
+                            end
+                        end
+                    end
+                else
+                    println("There are multiple GVKEYs per PERMNO, be careful on merging with other datasets")
+                    println("Pass forceUnique=true to the function to prevent this error")
+                end
+                df = dateRangeJoin(comp, df, on=[:permno], dateColMin="linkdt", dateColMax="linkenddt")
+            end
             select!(df, Not([:linkdt, :linkenddt]))
             
         end
@@ -226,7 +280,6 @@ function ibesCrspLink(dsn)
     dropmissing!(dfStocknamesTemp, :ticker)
     gd = groupby(dfStocknamesTemp, [:permno, :ticker, :ncusip, :comnam])
     dfStocknamesTemp = combine(gd, :namedt => minimum, :nameenddt => maximum)
-    select!(dfStocknamesTemp, Not([:namedt_maximum, :nameenddt_minimum]))
     sort!(dfStocknamesTemp, [:permno, :ticker, :namedt_minimum])
     dfStocknamesTemp = vcat([i[[end], :] for i in groupby(dfStocknamesTemp, [:permno, :ticker])]...)
     rename!(dfStocknamesTemp, :ticker => :ticker_crsp)
