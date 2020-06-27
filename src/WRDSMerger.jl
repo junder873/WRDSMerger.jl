@@ -26,7 +26,7 @@ export addIdentifiers, compustatCrspLink,
     crspData, crspWholeMarket, crspStocknames,
     calculateCAR,
     setRetTimeframe, retTimeframe, setFFMethod, dateRangeJoin,
-    ibesCrspLink
+    ibesCrspLink, calculate_car, calculate_car_single
 
 ##############################################################################
 ##

@@ -94,7 +94,7 @@ function addIdentifiers(dsn,
     permno::Bool = false,
     forceUnique::Bool = false,
 )
-
+    df = df[:, :]
     if "date" ∉ names(df)
         println("DataFrame must include a date column")
         return 0
