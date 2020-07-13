@@ -56,8 +56,8 @@ function calculate_car_single(
     idcol::String="permno",
     market_data::AbstractDataFrame=DataFrame()
     )
-    df[!, :dateStart] = calculateDays(df[:, :date], timeframe.businessDays[1], timeframe.subtraction, timeframe.monthPeriod)
-    df[!, :dateEnd] = calculateDays(df[:, :date], timeframe.businessDays[2], timeframe.addition, timeframe.monthPeriod)
+    df[!, :dateStart] = calculateDays(df[:, date], timeframe.businessDays[1], timeframe.subtraction, timeframe.monthPeriod)
+    df[!, :dateEnd] = calculateDays(df[:, date], timeframe.businessDays[2], timeframe.addition, timeframe.monthPeriod)
     if timeframe.monthPeriod
         stockFile1 = "msf"
         stockFile2 = "msi"
@@ -79,7 +79,7 @@ function calculate_car_single(
 
 
 
-    crsp = leftjoin(crsp, crspM, on=date)
+    crsp = leftjoin(crsp, crspM, on=:date)
     crsp[!, :car] = crsp[:, :ret] .- crsp[:, Symbol(timeframe.marketReturn)]
     crsp[!, :plus1] = crsp[:, :ret] .+ 1
     crsp[!, :plus1m] = crsp[:, Symbol(timeframe.marketReturn)] .+ 1
@@ -184,7 +184,7 @@ function calculate_car(
         end
         return dfAll
     else
-        df = calculate_car_single(df, timeframe, data=data, date=date, idcol=idcol, market_data=market_datas)
+        df = calculate_car_single(df, timeframes, data=data, date=date, idcol=idcol, market_data=market_data)
         return df
     end
 end
