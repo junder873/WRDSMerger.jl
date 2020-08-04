@@ -168,35 +168,36 @@ end
 function dateRangeJoin(
     df1::AbstractDataFrame,
     df2::AbstractDataFrame;
-    on::Union{Array{Symbol}, Array{String}, Array{Union{Symbol, String}}} = Symbol[],
-    validate::Bool=false,
+    on::Union{Array{Symbol}, Array{String}} = Symbol[],
+    validate::Tuple{Bool, Bool} = (false, false),
     dateColMin::Union{String, Symbol} = "datemin",
     dateColMax::Union{String, Symbol} = "datemax",
-    dateColTest::Union{String, Symbol} = "date"
+    dateColTest::Union{String, Symbol} = "date",
+    joinfun::Function = leftjoin
 )
     df1 = copy(df1)
     df2 = copy(df2)
     df2[!, :index2] = 1:size(df2, 1)
-    gdf2 = groupby(df2, on)
+    gdf = groupby(df2, on)
     ret = DataFrame(index1 = Int[], index2 = Int[])
     for i = 1:size(df1, 1)
-        temp = get(gdf2, NamedTuple(df1[i, on]), 0)
+        temp = get(gdf, NamedTuple(df1[i, on]), 0)
         if temp == 0
             continue
         end
         temp = temp[df1[i, dateColMin] .<= temp[:, dateColTest] .<= df1[i, dateColMax], :]
-        if validate && size(temp, 1) > 1
-            throw(ArgumentError("Merge key(s) in df2 are not unique. " *
-                            "First duplicate at row $(temp[1, :index2])"))
-        end
         for row in eachrow(temp)
             push!(ret, (i, row.index2))
         end
     end
     df1[!, :index1] = 1:size(df1, 1)
-    df1 = leftjoin(df1, ret, on=:index1, validate=(true, validate))
+    # I switch the validation order since the index portion is always true
+    # and I merge with the left df first, index1 will occur multiple times in
+    # ret if df2 has multiple keys matching df1
+    df1 = joinfun(df1, ret, on=:index1, validate=(true, validate[2]))
     select!(df2, Not(on))
-    df1 = leftjoin(df1, df2, on=:index2, validate=(false, validate))
+    df1 = joinfun(df1, df2, on=:index2, validate=(validate[1], true))
     select!(df1, Not([:index1, :index2]))
+
     return df1
 end

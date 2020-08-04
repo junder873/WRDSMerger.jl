@@ -86,16 +86,18 @@ function compustatCrspLink(dsn;
     return dfLink
 end
 
-function addIdentifiers(dsn,
+function addIdentifiers(
+    dsn,
     df::DataFrame;
     ncusip::Bool = false,
     cusip::Bool = false,
     gvkey::Bool = false,
     permno::Bool = false,
     forceUnique::Bool = false,
+    datecol::String = "date"
 )
     df = df[:, :]
-    if "date" ∉ names(df)
+    if datecol ∉ names(df)
         println("DataFrame must include a date column")
         return 0
     end
@@ -123,14 +125,23 @@ function addIdentifiers(dsn,
     if "gvkey" in names(df) # If gvkey exists and no other identifier does, permno must be fetched
         if "permno" ∉ names(df) && "cusip" ∉ names(df) && "ncusip" ∉ names(df)
             comp = unique(compustatCrspLink(dsn, gvkey=df[:, :gvkey]))
-            df[!, :linkdt] = coalesce.(df[:, :linkdt], Dates.today())
-            df[!, :linkenddt] = coalesce.(df[:, :linkenddt], Dates.today())
+            comp[!, :linkdt] = coalesce.(comp[:, :linkdt], Dates.today())
+            comp[!, :linkenddt] = coalesce.(comp[:, :linkenddt], Dates.today())
             try
-                df = dateRangeJoin(df, comp, on=[:gvkey], dateColMin="linkdt", dateColMax="linkenddt", validate=true)
+                df = dateRangeJoin(
+                    comp,
+                    df,
+                    on=[:gvkey],
+                    dateColMin="linkdt",
+                    dateColMax="linkenddt",
+                    validate=(true, false),
+                    dateColTest=datecol,
+                    joinfun=rightjoin
+                    )
             catch
                 if forceUnique
-                    sort!(df, :linkdt)
-                    gd = groupby(df, :gvkey)
+                    sort!(comp, :linkdt)
+                    gd = groupby(comp, :gvkey)
                     for g in gd
                         if size(g, 1) == 1
                             continue
@@ -144,11 +155,22 @@ function addIdentifiers(dsn,
                             end
                         end
                     end
+                    validate=(true, false)
                 else
-                    println("There are multiple PERMNOs per GVKEY, be careful on merging with other datasets")
-                    println("Pass forceUnique=true to the function to prevent this error")
+                    validate=(false, false)
+                    @warn "There are multiple PERMNOs per GVKEY, be careful on merging with other datasets"
+                    @warn "Pass forceUnique=true to the function to prevent this error"
                 end
-                df = dateRangeJoin(df, comp, on=[:gvkey], dateColMin="linkdt", dateColMax="linkenddt")
+                df = dateRangeJoin(
+                    comp,
+                    df,
+                    on=[:gvkey],
+                    dateColMin="linkdt",
+                    dateColMax="linkenddt",
+                    dateColTest=datecol,
+                    validate=validate,
+                    joinfun=rightjoin
+                    )
             end
             select!(df, Not([:linkdt, :linkenddt]))
         end
@@ -172,7 +194,16 @@ function addIdentifiers(dsn,
         if gvkey && "gvkey" ∉ names(df)
             comp = unique(compustatCrspLink(dsn, lpermno=df[:, :permno]))
             try
-                df = dateRangeJoin(comp, df, on=[:permno], dateColMin="linkdt", dateColMax="linkenddt", validate=true)
+                df = dateRangeJoin(
+                    comp,
+                    df,
+                    on=[:permno],
+                    dateColMin="linkdt",
+                    dateColMax="linkenddt",
+                    validate=(true, false),
+                    dateColTest=datecol,
+                    joinfun=rightjoin
+                    )
             catch
                 if forceUnique
                     sort!(comp, :linkdt)
@@ -190,11 +221,22 @@ function addIdentifiers(dsn,
                             end
                         end
                     end
+                    validate=(true, false)
                 else
-                    println("There are multiple GVKEYs per PERMNO, be careful on merging with other datasets")
-                    println("Pass forceUnique=true to the function to prevent this error")
+                    validate=(false, false)
+                    @warn "There are multiple GVKEYs per PERMNO, be careful on merging with other datasets"
+                    @warn "Pass forceUnique=true to the function to prevent this error"
                 end
-                df = dateRangeJoin(comp, df, on=[:permno], dateColMin="linkdt", dateColMax="linkenddt")
+                df = dateRangeJoin(
+                    comp,
+                    df,
+                    on=[:permno],
+                    dateColMin="linkdt",
+                    dateColMax="linkenddt",
+                    dateColTest=datecol,
+                    validate=validate,
+                    joinfun=rightjoin
+                )
             end
             select!(df, Not([:linkdt, :linkenddt]))
             
@@ -205,7 +247,7 @@ function addIdentifiers(dsn,
             select!(df, Not(pair[2]))
         end
     end
-    for col in ["permno", "cusip", "ncusip", "gvkey"]
+    for col in ["permno", "cusip", "ncusip", "gvkey"] # Not sure what this section does
         if col in names(df)
             df[!, col] = coalesce.(df[:, col])
         end
