@@ -140,18 +140,15 @@ function addIdentifiers(
                     )
             catch
                 if forceUnique
-                    sort!(comp, :linkdt)
-                    gd = groupby(comp, :gvkey)
-                    for g in gd
-                        if size(g, 1) == 1
+                    sort!(comp, [:gvkey, :linkdt])
+                    for i in 1:size(comp, 1)-1
+                        if comp[i, :gvkey] != comp[i+1, :gvkey]
                             continue
                         end
-                        for i in 1:size(g, 1)-1
-                            if g[i+1, :linkdt] <= g[i, :linkenddt]
-                                g[i+1, :linkdt] = g[i, :linkenddt] + Dates.Day(1)
-                                if g[i+1, :linkenddt] < g[i+1, :linkdt]
-                                    g[i+1, :linkenddt] = g[i+1, :linkdt]
-                                end
+                        if comp[i+1, :linkdt] <= comp[i, :linkenddt]
+                            comp[i+1, :linkdt] = comp[i, :linkenddt] + Dates.Day(1)
+                            if comp[i+1, :linkenddt] < comp[i+1, :linkdt]
+                                comp[i+1, :linkenddt] = comp[i+1, :linkdt]
                             end
                         end
                     end
@@ -179,9 +176,9 @@ function addIdentifiers(
     if "ncusip" in names(df) || "cusip" in names(df)
         if "permno" ∉ names(df) # to fetch either cusip, ncusip, or gvkey, permno is either necessary or trivial
             if "cusip" in names(df)
-                df = getCrspNames(dsn, df, :cusip, [:ncusip])
+                df = getCrspNames(dsn, df, :cusip, [:ncusip], datecol=datecol)
             else
-                df = getCrspNames(dsn, df, :ncusip, [:cusip])
+                df = getCrspNames(dsn, df, :ncusip, [:cusip], datecol=datecol)
             end
             dropmissing!(df, ["permno", "cusip", "ncusip"])
         end
@@ -206,18 +203,15 @@ function addIdentifiers(
                     )
             catch
                 if forceUnique
-                    sort!(comp, :linkdt)
-                    gd = groupby(comp, :permno)
-                    for g in gd
-                        if size(g, 1) == 1
+                    sort!(comp, [:permno, :linkdt])
+                    for i in 1:size(comp, 1)-1
+                        if comp[i, :permno] != comp[i+1, :permno]
                             continue
                         end
-                        for i in 1:size(g, 1)-1
-                            if g[i+1, :linkdt] <= g[i, :linkenddt]
-                                g[i+1, :linkdt] = g[i, :linkenddt] + Dates.Day(1)
-                                if g[i+1, :linkenddt] < g[i+1, :linkdt]
-                                    g[i+1, :linkenddt] = g[i+1, :linkdt]
-                                end
+                        if comp[i+1, :linkdt] <= comp[i, :linkenddt]
+                            comp[i+1, :linkdt] = comp[i, :linkenddt] + Dates.Day(1)
+                            if comp[i+1, :linkenddt] < comp[i+1, :linkdt]
+                                comp[i+1, :linkenddt] = comp[i+1, :linkdt]
                             end
                         end
                     end

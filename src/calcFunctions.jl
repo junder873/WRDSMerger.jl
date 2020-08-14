@@ -77,7 +77,7 @@ function calculate_car_single(
         crspM = market_data
     end
 
-
+    BusinessDays.initcache(:USNYSE)
 
     crsp = leftjoin(crsp, crspM, on=:date)
     crsp[!, :car] = crsp[:, :ret] .- crsp[:, Symbol(timeframe.marketReturn)]

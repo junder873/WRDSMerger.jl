@@ -114,7 +114,7 @@ function setNewDate(col1, col2)
     return ret
 end
 
-function getCrspNames(dsn, df, col, ignore)
+function getCrspNames(dsn, df, col, ignore; datecol="date")
     permno::Array{<:Number} = Int[]
     ncusip::Array{String} = String[]
     cusip::Array{String} = String[]
@@ -132,9 +132,9 @@ function getCrspNames(dsn, df, col, ignore)
         end
     end
     df = leftjoin(df, crsp, on=col)
-    df[!, :namedt] = setNewDate(df[:, :namedt], df[:, :date])
-    df[!, :nameenddt] = setNewDate(df[:, :nameenddt], df[:, :date])
-    df = df[df[:, :namedt] .<= df[:, :date] .<= df[:, :nameenddt], :]
+    df[!, :namedt] = setNewDate(df[:, :namedt], df[:, datecol])
+    df[!, :nameenddt] = setNewDate(df[:, :nameenddt], df[:, datecol])
+    df = df[df[:, :namedt] .<= df[:, datecol] .<= df[:, :nameenddt], :]
     select!(df, Not([:namedt, :nameenddt]))
     return df
 end
@@ -165,6 +165,21 @@ function myJoin(df1::DataFrame, df2::DataFrame)
     return df1
 end
 
+"""
+Joins the left dataframe with a daterange (though this can be any range) and
+the right dataframe with a date.
+
+### Arguments
+- `df1`: DataFrame with the range
+- `df2`: DataFrame with a specific value that fits between the range
+- `on`: Vector of column names that match is on (not including the range variables)
+- `validate::Tuple{Bool, Bool} = (false, false)`: whether to make sure matches are unique
+- `dateColMin::Union{String, Symbol} = "datemin"`: column name in left dataframe that is the minimum value
+- `dateColMax::Union{String, Symbol} = "datemax"`: column name in left dataframe that is the max value
+- `dateColTest::Union{String, Symbol} = "date"`: column name in right dataframe that fits between the min and max
+- `joinfun::Function = leftjoin`: the function being performed, mainly leftjoin or rightjoin
+
+"""
 function dateRangeJoin(
     df1::AbstractDataFrame,
     df2::AbstractDataFrame;
