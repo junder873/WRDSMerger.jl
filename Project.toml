@@ -18,8 +18,8 @@ CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 julia = "1"
 DataFrames = "≥ 0.20"
 ODBC = "≥ 1.0"
-IndexedTables = "0.12"
-BusinessDays = "0.9"
+IndexedTables = "≥ 0.12"
+BusinessDays = "≥ 0.9"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
