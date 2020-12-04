@@ -9,18 +9,18 @@ permnos = [87055, 77702, 86525, 12448, 92655]
 date = [Dates.Date(2012, 1, 15), Dates.Date(2015, 6, 30)]
 df = DataFrame(permno=repeat(permnos, 2), date=repeat(date, 5))
 
-data = CSV.read("data\\crsp.csv")
-market_data = CSV.read("data\\crspm.csv")
-resh = CSV.read("data\\dailycalc.csv", copycols=true)
+data = CSV.File("data\\crsp.csv") |> DataFrame
+market_data = CSV.File("data\\crspm.csv") |> DataFrame
+resh = CSV.File("data\\dailycalc.csv") |> DataFrame
 res = calculate_car(df, [ret1, ret2], data=data, market_data=market_data)
 sort!(res)
 sort!(resh)
 
 @test isequal(res, resh)
 
-data = CSV.read("data\\crspMonth.csv")
-market_data = CSV.read("data\\crspmMonth.csv")
-resh = CSV.read("data\\monthcalc.csv", copycols=true)
+data = CSV.File("data\\crspMonth.csv") |> DataFrame
+market_data = CSV.File("data\\crspmMonth.csv") |> DataFrame
+resh = CSV.File("data\\monthcalc.csv") |> DataFrame
 res = calculate_car(df, [ret3, ret4], data=data, market_data=market_data)
 sort!(res)
 sort!(resh)

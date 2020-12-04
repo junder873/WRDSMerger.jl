@@ -190,29 +190,273 @@ function dateRangeJoin(
     dateColTest::Union{String, Symbol} = "date",
     joinfun::Function = leftjoin
 )
-    df1 = copy(df1)
-    df2 = copy(df2)
-    df2[!, :index2] = 1:size(df2, 1)
-    gdf = groupby(df2, on)
-    ret = DataFrame(index1 = Int[], index2 = Int[])
-    for i = 1:size(df1, 1)
-        temp = get(gdf, NamedTuple(df1[i, on]), 0)
-        if temp == 0
-            continue
+    return range_join(
+        df1,
+        df2,
+        on,
+        [(<=, Symbol(dateColMin), Symbol(dateColTest)), (>=, Symbol(dateColMax), Symbol(dateColTest))];
+        validate,
+        joinfun
+
+    )
+    # df1 = copy(df1)
+    # df2 = copy(df2)
+    # df2[!, :index2] = 1:size(df2, 1)
+    # gdf = groupby(df2, on)
+    # ret = DataFrame(index1 = Int[], index2 = Int[])
+    # for i = 1:size(df1, 1)
+    #     temp = get(gdf, NamedTuple(df1[i, on]), 0)
+    #     if temp == 0
+    #         continue
+    #     end
+    #     temp = temp[df1[i, dateColMin] .<= temp[:, dateColTest] .<= df1[i, dateColMax], :]
+    #     for row in eachrow(temp)
+    #         push!(ret, (i, row.index2))
+    #     end
+    # end
+    # df1[!, :index1] = 1:size(df1, 1)
+    # # I switch the validation order since the index portion is always true
+    # # and I merge with the left df first, index1 will occur multiple times in
+    # # ret if df2 has multiple keys matching df1
+    # df1 = joinfun(df1, ret, on=:index1, validate=(true, validate[2]))
+    # select!(df2, Not(on))
+    # df1 = joinfun(df1, df2, on=:index2, validate=(validate[1], true))
+    # select!(df1, Not([:index1, :index2]))
+
+    # return df1
+end
+
+
+
+"""
+Joins the dataframes based on a series of conditions, designed
+to work with ranges
+
+### Arguments
+- `df1::DataFrame`: left DataFrame
+- `df2::DataFrame`: right DataFrame
+- `on`: either array of column names or matched pairs
+- `conditions::Array{Tuple{Function, Symbol, Symbol}}`: array of tuples where the tuple is (Function, left dataframe column symbol, right dataframe column symbol)
+- `joinfun::Function=leftjoin`: function being performed
+"""
+function range_join(
+    df1::DataFrame,
+    df2::DataFrame,
+    on,
+    conditions::Array{Tuple{Function, Symbol, Symbol}};
+    join_conditions::Union{Array{Symbol}, Symbol}=:and,
+    validate::Tuple{Bool, Bool}=(false, false),
+    joinfun::Function=leftjoin
+)
+
+    df1 = df1[:, :]
+    df2 = df2[:, :]
+    df2[!, :_index2] = 1:nrow(df2)
+
+    on1, on2 = parse_ons(on)
+
+    gdf = groupby(df2, on1)
+
+    df1[!, :_index2] = repeat([[0]], nrow(df1))
+
+
+    Threads.@threads for i in 1:nrow(df1)
+        temp = get(
+            gdf,
+            Tuple(df1[i, on2]),
+            0
+        )
+        temp == 0 && continue
+
+        fil = Array{Bool}(undef, nrow(temp))
+        fil .= true
+
+        for (j, (fun, lcol, rcol)) in enumerate(conditions)
+            temp_join = typeof(join_conditions) <: Symbol ? join_conditions : join_conditions[j-1]
+            if j == 1 || temp_join == :and
+                fil = fil .& broadcast(fun, df1[i, lcol], temp[:, rcol])
+            else
+                fil = fil .| broadcast(fun, df1[i, lcol], temp[:, rcol])
+            end
         end
-        temp = temp[df1[i, dateColMin] .<= temp[:, dateColTest] .<= df1[i, dateColMax], :]
-        for row in eachrow(temp)
-            push!(ret, (i, row.index2))
+
+        temp = temp[fil, :]
+
+        if nrow(temp) > 0
+            df1[i, :_index2] = temp._index2
+            if validate[2] && nrow(temp) > 1
+                error("More than one match at row $(temp._index2) in df2")
+            end
         end
+
+
     end
-    df1[!, :index1] = 1:size(df1, 1)
-    # I switch the validation order since the index portion is always true
-    # and I merge with the left df first, index1 will occur multiple times in
-    # ret if df2 has multiple keys matching df1
-    df1 = joinfun(df1, ret, on=:index1, validate=(true, validate[2]))
-    select!(df2, Not(on))
-    df1 = joinfun(df1, df2, on=:index2, validate=(validate[1], true))
-    select!(df1, Not([:index1, :index2]))
+
+
+    df1 = flatten(df1, :_index2)
+
+    select!(df2, Not(on2))
+    df1 = joinfun(df1, df2, on=:_index2, validate=(validate[1], true))
+    select!(df1, Not([:_index2]))
+
 
     return df1
+end
+
+function parse_expression(
+    expression::Expr
+)
+    out = Expr[]
+    if expression.head == :call || expression.head == :comparison
+        push!(out, expression)
+        return out
+    end
+    for a in expression.args
+        if a.head == :&& || a.head == :||
+            out = vcat(out, parse_expression(a))
+        else a.head == :call
+            push!(out, a)
+        end
+    end
+    return out
+end
+
+function return_function(
+    val::Symbol
+)
+    if val == :<
+        return <
+    elseif val == :>
+        return >
+    elseif val == :<=
+        return <=
+    elseif val == :>=
+        return >=
+    else
+        error("Function Symbol must be a comparison")
+    end
+end
+
+function reverse_return_function(
+    val::Symbol
+)
+    if val == :<
+        return return_function(:>)
+    elseif val == :>
+        return return_function(:<)
+    elseif val == :<=
+        return return_function(:>=)
+    elseif val == :>=
+        return return_function(:<=)
+    else
+        error("Function Symbol must be a comparison")
+    end
+end
+
+function push_condition!(
+    conditions::Array{Tuple{Function, Symbol, Symbol}},
+    f::Symbol,
+    first::Expr,
+    second::Expr
+)
+    if first.args[1] == :left && second.args[1] == :right
+        push!(
+            conditions,
+            (
+                return_function(f),
+                eval(first.args[2]),
+                eval(second.args[2])
+            )
+        )
+    elseif first.args[1] == :right && second.args[1] == :left
+        push!(
+            conditions,
+            (
+                reverse_return_function(f),
+                eval(second.args[2]),
+                eval(first.args[2])
+            )
+        )
+    else
+        error("Comparison must have right and left as labels")
+    end
+end
+
+function expressions_to_conditions(
+    expressions::Array{Expr}
+)
+    out = Tuple{Function, Symbol, Symbol}[]
+    for x in expressions
+        if x.head == :call
+            println(x.args)
+            push_condition!(
+                out,
+                x.args[1],
+                x.args[2],
+                x.args[3]
+            )
+        elseif x.head == :comparison
+            for i in 1:2:length(x.args)-1
+                push_condition!(
+                    out,
+                    x.args[i+1],
+                    x.args[i],
+                    x.args[i+2]
+                )
+            end
+        end
+    end
+    return out
+end
+            
+
+
+
+
+
+function parse_expr(fil)
+    fil = string(fil)
+    for (s, r) in [("||", ") .| ("), ("&&", ") .& ("), ("<", ".<"), (">", ".>"), (r"left\.([^\s]*)", s"df1[i, :\1]"), (r"right\.([^\s]*)", s"temp[:, :\1]")]
+        fil = replace(fil, s => r)
+    end
+    fil = "($fil)"
+    println(fil)
+    Meta.parse(fil)
+end
+
+
+function parse_ons(on)
+    on1 = String[]
+    on2 = String[]
+    for x in on
+        if typeof(x) <: Pair
+            push!(on1, String(x[1]))
+            push!(on2, String(x[2]))
+        else
+            push!(on1, String(x))
+            push!(on2, String(x))
+        end
+    end
+    return on1, on2
+end
+
+
+macro join(
+    df1,
+    df2,
+    on,
+    conditions,
+    args...
+)
+    local new_conditions = conditions |> parse_expression |> expressions_to_conditions
+    local aakws = [esc(a) for a in args]
+    quote
+        my_join(
+            $df1,
+            $df2,
+            $on,
+            $new_conditions;
+            $(aakws...)
+        )
+    end
 end
