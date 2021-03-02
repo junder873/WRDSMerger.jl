@@ -4,8 +4,8 @@ function compustatCrspLink(dsn;
     cols::Array{String} = ["gvkey", "lpermno", "linkdt", "linkenddt"])
 
     if sum(length.([gvkey, lpermno]) .> 0) > 1 # Tests if any array has data, sums to test if multiple have data
-        println("Only one of the identifying columns can have values in it")
-        println("Please retry where either gvkey or lpermno have data")
+        @error("Only one of the identifying columns can have values in it")
+        throw("Please retry where either gvkey or lpermno have data")
         return 0
     end
 
@@ -24,20 +24,18 @@ function compustatCrspLink(dsn;
     if sum(length.([gvkey, lpermno]) .> 0) == 0 # If no restrictions, get all data
         query = """
                             select distinct $colString
-                            from crsp_a_ccm.ccmxpf_linktable
+                            from crsp_a_ccm.ccmxpf_lnkhist
                             where lpermno IS NOT NULL AND
                             linktype in ('LU', 'LC') AND
-                            linkprim in ('P', 'C') AND
-                            usedflag = 1
+                            linkprim in ('P', 'C')       
                             """
     elseif length(gvkey) > 100 || length(lpermno) > 100 # If a lot of data, get all of it
         query = """
                 select distinct $colString
-                from crsp_a_ccm.ccmxpf_linktable
+                from crsp_a_ccm.ccmxpf_lnkhist
                 where lpermno IS NOT NULL AND
                 linktype in ('LU', 'LC') AND
-                linkprim in ('P', 'C') AND
-                usedflag = 1
+                linkprim in ('P', 'C')
                 """
         
     else
@@ -46,11 +44,10 @@ function compustatCrspLink(dsn;
             for x in gvkey
                 temp_query = """
                                 (select $colString
-                                from crsp_a_ccm.ccmxpf_linktable
+                                from crsp_a_ccm.ccmxpf_lnkhist
                                 where lpermno IS NOT NULL and gvkey = '$x' AND
                                 linktype in ('LU', 'LC') AND
-                                linkprim in ('P', 'C') AND
-                                usedflag = 1)
+                                linkprim in ('P', 'C'))
                                 """
                 push!(queryL, temp_query)
             end
@@ -60,11 +57,10 @@ function compustatCrspLink(dsn;
             for x in lpermno
                 temp_query = """
                                 (select $colString
-                                from crsp_a_ccm.ccmxpf_linktable
+                                from crsp_a_ccm.ccmxpf_lnkhist
                                 where lpermno IS NOT NULL and lpermno = $x AND
                                 linktype in ('LU', 'LC') AND
-                                linkprim in ('P', 'C') AND
-                                usedflag = 1)
+                                linkprim in ('P', 'C'))
                                 """
                 push!(queryL, temp_query)
             end
@@ -86,165 +82,241 @@ function compustatCrspLink(dsn;
     return dfLink
 end
 
+function cik_to_gvkey(
+    dsn;
+    cik::Array{String}=String[],
+    gvkey::Array{String}=String[],
+    cols::Array{String}=["gvkey", "cik"]
+)
+    if sum(length.([gvkey, cik]) .> 0) > 1 # Tests if any array has data, sums to test if multiple have data
+        @error("Only one of the identifying columns can have values in it")
+        throw("Please retry where either gvkey or cik have data")
+    end
+    colString = ""
+    for col in cols
+        if colString == ""
+            colString = col
+        else
+            colString = colString * ", " * col
+        end
+    end
+    if (sum(length.([gvkey, cik]) .> 0) == 0) || (length(gvkey) > 100 || length(cik) > 100)
+        query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL"
+    else
+        if length(gvkey) > 0
+            queryL = String[]
+            for x in gvkey
+                temp_query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL AND gvkey = $x"
+                push!(queryL, temp_query)
+            end
+            query = join(queryL, " UNION ")
+        else
+            queryL = String[]
+            for x in cik
+                temp_query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL AND cik = $x"
+                push!(queryL, temp_query)
+            end
+            query = join(queryL, " UNION ")
+        end
+    end
+
+    dfLink = DBInterface.execute(dsn, query) |> DataFrame
+    return dfLink
+end
+
+function join_permno_gvkey(
+    dsn,
+    df::DataFrame;
+    forceUnique::Bool=false,
+    col1::String="gvkey",
+    col2::String="gvkey",
+    datecol::String="date"
+)
+    if col2 == "gvkey"
+        comp = unique(compustatCrspLink(dsn, gvkey=df[:, col1]))
+    else
+        comp = unique(compustatCrspLink(dsn, lpermno=df[:, col1]))
+    end
+    comp[!, :linkdt] = coalesce.(comp[:, :linkdt], minimum(df[:, datecol]) - Dates.Day(1))
+    comp[!, :linkenddt] = coalesce.(comp[:, :linkenddt], Dates.today())
+    try
+        df = range_join(
+            df,
+            comp,
+            [col1 => col2],
+            [(>, Symbol(datecol), :linkdt), (<=, Symbol(datecol), :linkenddt)],
+            validate=(false, true)
+        )
+    catch
+        if forceUnique
+            sort!(comp, [:gvkey, :linkdt])
+            for i in 1:size(comp, 1)-1
+                if comp[i, :gvkey] != comp[i+1, :gvkey]
+                    continue
+                end
+                if comp[i+1, :linkdt] <= comp[i, :linkenddt]
+                    comp[i+1, :linkdt] = comp[i, :linkenddt] + Dates.Day(1)
+                    if comp[i+1, :linkenddt] < comp[i+1, :linkdt]
+                        comp[i+1, :linkenddt] = comp[i+1, :linkdt]
+                    end
+                end
+            end
+            validate=(true, false)
+        else
+            validate=(false, false)
+            @warn "There are multiple PERMNOs per GVKEY, be careful on merging with other datasets"
+            @warn "Pass forceUnique=true to the function to prevent this error"
+        end
+        df = range_join(
+            df,
+            comp,
+            [col1 => col2],
+            [(>, Symbol(datecol), :linkdt), (<=, Symbol(datecol), :linkenddt)];
+            validate
+        )
+    end
+    select!(df, Not([:linkdt, :linkenddt]))
+    return df
+end
+
+
 function addIdentifiers(
     dsn,
     df::DataFrame;
-    ncusip::Bool = false,
-    cusip::Bool = false,
-    gvkey::Bool = false,
-    permno::Bool = false,
-    forceUnique::Bool = false,
-    datecol::String = "date"
+    cik::Bool=false,
+    ncusip::Bool=false,
+    cusip::Bool=false,
+    gvkey::Bool=false,
+    permno::Bool=false,
+    forceUnique::Bool=false,
+    datecol::String="date",
+    cik_name::String="cik",
+    cusip_name::String="cusip",
+    gvkey_name::String="gvkey",
+    permno_name::String="permno",
+    ncusip_name::String="ncusip",
 )
     df = df[:, :]
     if datecol ∉ names(df)
-        println("DataFrame must include a date column")
-        return 0
+        throw("DataFrame must include a date column")
     end
-    if sum([x in names(df) for x in ["ncusip", "cusip", "gvkey", "permno"]]) == 0
-        println("DataFrame must include identifying column: cusip, ncusip, gvkey, or permno")
-        return 0
+    col_count = sum([x in names(df) for x in [cik_name, ncusip_name, cusip_name, gvkey_name, permno_name]])
+    if col_count == 0
+        throw("DataFrame must include identifying column: cik, cusip, ncusip, gvkey, or permno")
     end
-    if sum([x in names(df) for x in ["ncusip", "cusip", "gvkey", "permno"]]) > 1
-        println("Function has a preset order on which key will be used first, it is optimal to start with one key")
+    if col_count > 1
+        @warn("Function has a preset order on which key will be used first, it is optimal to start with one key")
+    end
+    if cik_name in names(df)
+        @warn("Observations with a CIK that does not have a matching GVKEY will be dropped")
+    end
+    if ncusip_name in names(df) && any(length.(df[:, ncusip_name]) .> 8)
+        throw("Cusip or NCusip value must be of length 8 to match CRSP values")
+    end
+    if cusip_name in names(df) && any(length.(df[:, cusip_name]) .> 8)
+        throw("Cusip or NCusip value must be of length 8 to match CRSP values")
     end
 
-    if "ncusip" in names(df) && !ncusip
+    if cik_name in names(df)
+        cik = true
+        identifying_col=cik_name
+        identifier_was_int=false
+        if typeof(df[:, cik_name]) <: Array{<:Real}
+            dropmissing!(df, cik_name)
+            df[!, cik_name] = lpad.(df[:, cik_name], 10, "0")
+            identifier_was_int=true
+        end
+    end
+    if ncusip_name in names(df)
         ncusip = true
+        identifying_col=ncusip_name
+        identifier_was_int=false
+        dropmissing!(df, ncusip_name)
     end
-    if "cusip" in names(df) && !cusip
+    if cusip_name in names(df)
         cusip = true
+        identifying_col=cusip_name
+        identifier_was_int=false
+        dropmissing!(df, cusip_name)
     end
-    if "gvkey" in names(df) && !gvkey
+    if gvkey_name in names(df)
         gvkey = true
+        identifying_col=gvkey_name
+        identifier_was_int=false
+        dropmissing!(df, gvkey_name)
+        if typeof(df[:, gvkey_name]) <: Array{<:Real}
+            df[!, gvkey_name] = lpad.(df[:, gvkey_name], 6, "0")
+            identifier_was_int=true
+        end
     end
-    if "permno" in names(df) && !permno
+    if permno_name in names(df)
         permno = true
+        identifying_col=permno_name
+        identifier_was_int=true
+        dropmissing!(df, permno_name)
     end
 
-    if "gvkey" in names(df) # If gvkey exists and no other identifier does, permno must be fetched
-        if "permno" ∉ names(df) && "cusip" ∉ names(df) && "ncusip" ∉ names(df)
-            comp = unique(compustatCrspLink(dsn, gvkey=df[:, :gvkey]))
-            comp[!, :linkdt] = coalesce.(comp[:, :linkdt], Dates.today())
-            comp[!, :linkenddt] = coalesce.(comp[:, :linkenddt], Dates.today())
-            try
-                df = dateRangeJoin(
-                    comp,
-                    df,
-                    on=[:gvkey],
-                    dateColMin="linkdt",
-                    dateColMax="linkenddt",
-                    validate=(true, false),
-                    dateColTest=datecol,
-                    joinfun=rightjoin
-                    )
-            catch
-                if forceUnique
-                    sort!(comp, [:gvkey, :linkdt])
-                    for i in 1:size(comp, 1)-1
-                        if comp[i, :gvkey] != comp[i+1, :gvkey]
-                            continue
-                        end
-                        if comp[i+1, :linkdt] <= comp[i, :linkenddt]
-                            comp[i+1, :linkdt] = comp[i, :linkenddt] + Dates.Day(1)
-                            if comp[i+1, :linkenddt] < comp[i+1, :linkdt]
-                                comp[i+1, :linkenddt] = comp[i+1, :linkdt]
-                            end
-                        end
-                    end
-                    validate=(true, false)
-                else
-                    validate=(false, false)
-                    @warn "There are multiple PERMNOs per GVKEY, be careful on merging with other datasets"
-                    @warn "Pass forceUnique=true to the function to prevent this error"
-                end
-                df = dateRangeJoin(
-                    comp,
-                    df,
-                    on=[:gvkey],
-                    dateColMin="linkdt",
-                    dateColMax="linkenddt",
-                    dateColTest=datecol,
-                    validate=validate,
-                    joinfun=rightjoin
-                    )
-            end
-            select!(df, Not([:linkdt, :linkenddt]))
+    
+
+    if cik_name in names(df)
+        ciks = cik_to_gvkey(dsn, cik=unique(df[:, cik_name]))
+        df = innerjoin(
+            df,
+            ciks,
+            on=[cik_name => "cik"],
+            validate=(false, true)
+        )
+        dropmissing!(df, "gvkey")
+    end
+
+
+    if gvkey_name in names(df) # If gvkey exists and no other identifier does, permno must be fetched
+        if permno_name ∉ names(df) && cusip_name ∉ names(df) && ncusip_name ∉ names(df)
+            df = join_permno_gvkey(dsn, df; forceUnique, col1="gvkey", datecol)
         end
     end
 
-    if "ncusip" in names(df) || "cusip" in names(df)
-        if "permno" ∉ names(df) # to fetch either cusip, ncusip, or gvkey, permno is either necessary or trivial
-            if "cusip" in names(df)
-                df = getCrspNames(dsn, df, :cusip, [:ncusip], datecol=datecol)
+    if ncusip_name in names(df) || cusip_name in names(df)
+        if permno_name ∉ names(df) # to fetch either cusip, ncusip, or gvkey, permno is either necessary or trivial
+            if cusip_name in names(df)
+                df = getCrspNames(dsn, df, cusip_name, [:ncusip], datecol=datecol, identifying_col="cusip")
             else
-                df = getCrspNames(dsn, df, :ncusip, [:cusip], datecol=datecol)
+                df = getCrspNames(dsn, df, ncusip_name, [:cusip], datecol=datecol, identifying_col="ncusip")
             end
-            dropmissing!(df, ["permno", "cusip", "ncusip"])
+            dropmissing!(df, [permno_name, cusip_name, ncusip_name])
         end
     end
                 
-    if "permno" in names(df)
-        if (ncusip && "ncusip" ∉ names(df)) || (cusip && "cusip" ∉ names(df))
-            df = getCrspNames(dsn, df, :permno, [:ncusip, :cusip])
+    if permno_name in names(df)
+        if (ncusip && ncusip_name ∉ names(df)) || (cusip && cusip_name ∉ names(df))
+            df = getCrspNames(dsn, df, permno_name, [:ncusip, :cusip], datecol=datecol)
         end
-        if gvkey && "gvkey" ∉ names(df)
-            comp = unique(compustatCrspLink(dsn, lpermno=df[:, :permno]))
-            try
-                df = dateRangeJoin(
-                    comp,
-                    df,
-                    on=[:permno],
-                    dateColMin="linkdt",
-                    dateColMax="linkenddt",
-                    validate=(true, false),
-                    dateColTest=datecol,
-                    joinfun=rightjoin
-                    )
-            catch
-                if forceUnique
-                    sort!(comp, [:permno, :linkdt])
-                    for i in 1:size(comp, 1)-1
-                        if comp[i, :permno] != comp[i+1, :permno]
-                            continue
-                        end
-                        if comp[i+1, :linkdt] <= comp[i, :linkenddt]
-                            comp[i+1, :linkdt] = comp[i, :linkenddt] + Dates.Day(1)
-                            if comp[i+1, :linkenddt] < comp[i+1, :linkdt]
-                                comp[i+1, :linkenddt] = comp[i+1, :linkdt]
-                            end
-                        end
-                    end
-                    validate=(true, false)
-                else
-                    validate=(false, false)
-                    @warn "There are multiple GVKEYs per PERMNO, be careful on merging with other datasets"
-                    @warn "Pass forceUnique=true to the function to prevent this error"
-                end
-                df = dateRangeJoin(
-                    comp,
-                    df,
-                    on=[:permno],
-                    dateColMin="linkdt",
-                    dateColMax="linkenddt",
-                    dateColTest=datecol,
-                    validate=validate,
-                    joinfun=rightjoin
-                )
-            end
-            select!(df, Not([:linkdt, :linkenddt]))
-            
+        if (gvkey && gvkey_name ∉ names(df)) || (cik && cik_name ∉ names(df) && gvkey_name ∉ names(df))
+            df = join_permno_gvkey(dsn, df; forceUnique, col1=permno_name, col2="permno", datecol)
         end
     end
-    for pair in [(ncusip, "ncusip"), (cusip, "cusip"), (gvkey, "gvkey"), (permno, "permno")]
+
+    if cik && cik_name ∉ names(df)
+        temp = unique(dropmissing(df[:, [gvkey_name]]))
+        ciks = cik_to_gvkey(dsn, cik=temp[:, gvkey_name])
+        dropmissing!(ciks)
+        df = leftjoin(
+            df,
+            ciks,
+            on=[gvkey_name => gvkey_name],
+            validate=(false, true),
+            matchmissing=:equal
+        )
+    end
+
+    for pair in [(ncusip, ncusip_name), (cusip, cusip_name), (gvkey, gvkey_name), (permno, permno_name), (cik, cik_name)]
         if !pair[1] && pair[2] in names(df)
             select!(df, Not(pair[2]))
         end
     end
-    for col in ["permno", "cusip", "ncusip", "gvkey"] # Not sure what this section does
-        if col in names(df)
-            df[!, col] = coalesce.(df[:, col])
-        end
+
+    if identifier_was_int && typeof(df[:, identifying_col]) <: Array{String}
+        df[!, identifying_col] = parse.(Int, df[:, identifying_col])
     end
     return df
 end

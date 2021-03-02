@@ -114,27 +114,33 @@ function setNewDate(col1, col2)
     return ret
 end
 
-function getCrspNames(dsn, df, col, ignore; datecol="date")
+function getCrspNames(dsn, df, col, ignore; datecol="date", identifying_col::String="permno")
     permno::Array{<:Number} = Int[]
     ncusip::Array{String} = String[]
     cusip::Array{String} = String[]
-    if col == :permno
-        permno = df[:, :permno]
-    elseif col == :cusip
-        cusip = df[:, :cusip]
+    df = dropmissing(df, col)
+    if identifying_col == "permno"
+        permno = df[:, col]
+    elseif identifying_col == "cusip"
+        cusip = df[:, col]
     else
-        ncusip = df[:, :ncusip]
+        ncusip = df[:, col]
     end
     crsp = unique(crspStocknames(dsn, permno=permno, cusip=cusip, ncusip=ncusip, cols=["permno", "ncusip", "cusip", "namedt", "nameenddt"]))
     for x in ignore
-        if String(x) in names(df) # Removes the column if it would create a duplicate
+        if x in names(crsp) # Removes the column if it would create a duplicate
             select!(crsp, Not(x))
         end
     end
-    df = leftjoin(df, crsp, on=col)
-    df[!, :namedt] = setNewDate(df[:, :namedt], df[:, datecol])
-    df[!, :nameenddt] = setNewDate(df[:, :nameenddt], df[:, datecol])
-    df = df[df[:, :namedt] .<= df[:, datecol] .<= df[:, :nameenddt], :]
+    crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
+    crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
+    df = range_join(
+        df,
+        crsp,
+        [col => identifying_col],
+        [(<=, Symbol(datecol), :nameenddt), (>=, Symbol(datecol), :namedt)],
+        validate=(false, true)
+    )
     select!(df, Not([:namedt, :nameenddt]))
     return df
 end
@@ -199,31 +205,6 @@ function dateRangeJoin(
         joinfun
 
     )
-    # df1 = copy(df1)
-    # df2 = copy(df2)
-    # df2[!, :index2] = 1:size(df2, 1)
-    # gdf = groupby(df2, on)
-    # ret = DataFrame(index1 = Int[], index2 = Int[])
-    # for i = 1:size(df1, 1)
-    #     temp = get(gdf, NamedTuple(df1[i, on]), 0)
-    #     if temp == 0
-    #         continue
-    #     end
-    #     temp = temp[df1[i, dateColMin] .<= temp[:, dateColTest] .<= df1[i, dateColMax], :]
-    #     for row in eachrow(temp)
-    #         push!(ret, (i, row.index2))
-    #     end
-    # end
-    # df1[!, :index1] = 1:size(df1, 1)
-    # # I switch the validation order since the index portion is always true
-    # # and I merge with the left df first, index1 will occur multiple times in
-    # # ret if df2 has multiple keys matching df1
-    # df1 = joinfun(df1, ret, on=:index1, validate=(true, validate[2]))
-    # select!(df2, Not(on))
-    # df1 = joinfun(df1, df2, on=:index2, validate=(validate[1], true))
-    # select!(df1, Not([:index1, :index2]))
-
-    # return df1
 end
 
 
@@ -255,7 +236,7 @@ function range_join(
 
     on1, on2 = parse_ons(on)
 
-    gdf = groupby(df2, on1)
+    gdf = groupby(df2, on2)
 
     df1[!, :_index2] = repeat([[0]], nrow(df1))
 
@@ -263,7 +244,7 @@ function range_join(
     Threads.@threads for i in 1:nrow(df1)
         temp = get(
             gdf,
-            Tuple(df1[i, on2]),
+            Tuple(df1[i, on1]),
             0
         )
         temp == 0 && continue
