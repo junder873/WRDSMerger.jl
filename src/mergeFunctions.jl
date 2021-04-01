@@ -380,6 +380,8 @@ function ibesCrspLink(dsn)
     dfIbesNamesTemp = dfMissings[:, [:ticker, :cname, :oftic, :sdates, :cusip]]
     gd = groupby(dfIbesNames[:, [:ticker, :oftic, :sdates]], [:ticker, :oftic])
     dfTemp = combine(gd, valuecols(gd) .=> [minimum, maximum])
+    dropmissing!(dfTemp, [:ticker, :oftic])
+    dropmissing!(dfIbesNamesTemp, [:ticker, :oftic])
     dfIbesNamesTemp = leftjoin(dfIbesNamesTemp, dfTemp, on=[:ticker, :oftic])
     dfIbesNamesTemp = dfIbesNamesTemp[dfIbesNamesTemp.sdates .== dfIbesNamesTemp.sdates_maximum, :]
     dropmissing!(dfIbesNamesTemp, :cname)
