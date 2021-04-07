@@ -48,34 +48,27 @@ function calculateCARsingle(dsn,
     return df
 end
 
-function calculate_car_single(
+function calculate_car(
     df::AbstractDataFrame,
-    timeframe::retTimeframe;
-    data::Union{ODBC.Connection, AbstractDataFrame}=DataFrame(),
+    timeframe::retTimeframe,
+    data::AbstractDataFrame,
+    market_data::AbstractDataFrame;
     date::String="date",
     idcol::String="permno",
-    market_data::AbstractDataFrame=DataFrame()
-    )
+    
+)
+    if date ∉ names(df)
+        throw(ArgumentError("The $date column is not found in the dataframe"))
+    end
+    if idcol ∉ names(df)
+        throw(ArgumentError("The $idcol column is not found in the dataframe"))
+    end
     df[!, :dateStart] = calculateDays(df[:, date], timeframe.businessDays[1], timeframe.subtraction, timeframe.monthPeriod)
     df[!, :dateEnd] = calculateDays(df[:, date], timeframe.businessDays[2], timeframe.addition, timeframe.monthPeriod)
-    if timeframe.monthPeriod
-        stockFile1 = "msf"
-        stockFile2 = "msi"
-    else
-        stockFile1 = "dsf"
-        stockFile2 = "dsi"
-    end
-    if typeof(data) <: ODBC.Connection
-        crsp = crspData(data, df, stockFile = stockFile1)
-        crspM = crspWholeMarket(data,
-            stockFile = stockFile2,
-            dateStart = minimum(df[:, :dateStart]),
-            dateEnd = maximum(df[:, :dateEnd]),
-            col = timeframe.marketReturn)
-    else
-        crsp = data
-        crspM = market_data
-    end
+
+    crsp = data
+    crspM = market_data
+
 
     BusinessDays.initcache(:USNYSE)
 
@@ -103,10 +96,97 @@ function calculate_car_single(
     select!(df2, Not([:plus1_prod, :plus1m_prod]))
     select!(df, Not([:plus1, :plus1m]))
     gd = groupby(df, aggCols)
-    df = combine(gd, valuecols(gd) .=> sum)
+    df = combine(gd, valuecols(gd) .=> sum, valuecols(gd) .=> std)
     df = leftjoin(df, df2, on=aggCols)
     return df
 end
+
+function calculate_car(
+    df::AbstractDataFrame,
+    timeframe::retTimeframe,
+    data::ODBC.Connection;
+    date::String="date",
+    
+)
+    idcol::String="permno"
+    df[!, :dateStart] = calculateDays(df[:, date], timeframe.businessDays[1], timeframe.subtraction, timeframe.monthPeriod)
+    df[!, :dateEnd] = calculateDays(df[:, date], timeframe.businessDays[2], timeframe.addition, timeframe.monthPeriod)
+    if timeframe.monthPeriod
+        stockFile1 = "msf"
+        stockFile2 = "msi"
+    else
+        stockFile1 = "dsf"
+        stockFile2 = "dsi"
+    end
+
+    crsp = crspData(data, df, stockFile = stockFile1)
+    crspM = crspWholeMarket(data,
+        stockFile = stockFile2,
+        dateStart = minimum(df[:, :dateStart]),
+        dateEnd = maximum(df[:, :dateEnd]),
+        col = timeframe.marketReturn)
+    return calculate_car(df, timeframe, crsp, crspM; date=date, idcol=idcol)
+end
+
+# function calculate_car_single(
+#     df::AbstractDataFrame,
+#     timeframe::retTimeframe;
+#     data::Union{ODBC.Connection, AbstractDataFrame}=DataFrame(),
+#     date::String="date",
+#     idcol::String="permno",
+#     market_data::AbstractDataFrame=DataFrame()
+#     )
+#     df[!, :dateStart] = calculateDays(df[:, date], timeframe.businessDays[1], timeframe.subtraction, timeframe.monthPeriod)
+#     df[!, :dateEnd] = calculateDays(df[:, date], timeframe.businessDays[2], timeframe.addition, timeframe.monthPeriod)
+#     if timeframe.monthPeriod
+#         stockFile1 = "msf"
+#         stockFile2 = "msi"
+#     else
+#         stockFile1 = "dsf"
+#         stockFile2 = "dsi"
+#     end
+#     if typeof(data) <: ODBC.Connection
+#         crsp = crspData(data, df, stockFile = stockFile1)
+#         crspM = crspWholeMarket(data,
+#             stockFile = stockFile2,
+#             dateStart = minimum(df[:, :dateStart]),
+#             dateEnd = maximum(df[:, :dateEnd]),
+#             col = timeframe.marketReturn)
+#     else
+#         crsp = data
+#         crspM = market_data
+#     end
+
+#     BusinessDays.initcache(:USNYSE)
+
+#     crsp = leftjoin(crsp, crspM, on=:date)
+#     crsp[!, :car] = crsp[:, :ret] .- crsp[:, Symbol(timeframe.marketReturn)]
+#     crsp[!, :plus1] = crsp[:, :ret] .+ 1
+#     crsp[!, :plus1m] = crsp[:, Symbol(timeframe.marketReturn)] .+ 1
+#     rename!(crsp, :date => :retDate)
+#     rename!(crsp, Symbol(timeframe.marketReturn) => :retm)
+
+#     df = dateRangeJoin(df, crsp, on=[idcol], dateColMin="dateStart", dateColMax="dateEnd", dateColTest="retDate")
+
+#     #df = join(df, crsp, on=:permno, kind=:left)
+
+#     #df = df[.&(df[:, :dateStart] .<= df[:, :retDate], df[:, :dateEnd] .>= df[:, :retDate]), :]
+#     df[!, :businessDays] = bdayscount(:USNYSE, df[:, :dateStart], df[:, :dateEnd]) .+ 1
+#     select!(df, Not([:dateStart, :dateEnd, :retDate]))
+#     aggCols = [idcol, date, "businessDays"]
+#     if "name" in names(df)
+#         push!(aggCols, "name")
+#     end
+#     gd = groupby(df[:, vcat(aggCols, ["plus1", "plus1m"])], aggCols)
+#     df2 = combine(gd, valuecols(gd) .=> prod)
+#     df2[!, :bhar] = df2[:, :plus1_prod] .- df2[:, :plus1m_prod]
+#     select!(df2, Not([:plus1_prod, :plus1m_prod]))
+#     select!(df, Not([:plus1, :plus1m]))
+#     gd = groupby(df, aggCols)
+#     df = combine(gd, valuecols(gd) .=> sum)
+#     df = leftjoin(df, df2, on=aggCols)
+#     return df
+# end
 
 function calculateCAR(dsn,
     df::DataFrame,
@@ -151,43 +231,111 @@ function calculateCAR(dsn,
     end
 end
 
+
+
 function calculate_car(
     df::AbstractDataFrame,
-    timeframes::Union{Array{retTimeframe},retTimeframe};
-    data::Union{AbstractDataFrame, ODBC.Connection} = DataFrame(),
+    timeframe::Array{retTimeframe},
+    data::AbstractDataFrame,
+    market_data::AbstractDataFrame;
     date::String="date",
-    idcol::String="permno",
-    market_data::AbstractDataFrame=DataFrame()
-    )
-    if date ∉ names(df)
-        throw(ArgumentError("The $date column is not found in the dataframe"))
-    end
-    if idcol ∉ names(df)
-        throw(ArgumentError("The $idcol column is not found in the dataframe"))
-    end
-    if typeof(data) == ODBC.Connection && idcol != "permno"
-        throw(ArgumentError("If connecting to WRDS, the idcol argument must be permno or cusip"))
-    end
+    idcol::String="permno"
+)
 
 
     df = df[:, :]
 
-    if typeof(timeframes) <: Array
-        dfAll = DataFrame()
-        for timeframe in timeframes
-            df[!, :name] .= nameConvention(timeframe)
-            if size(dfAll, 1) == 0
-                dfAll = calculate_car_single(df, timeframe, data=data, date=date, idcol=idcol, market_data=market_data)
-            else
-                dfAll = vcat(dfAll, calculate_car_single(df, timeframe, data=data, date=date, idcol=idcol, market_data=market_data))
-            end
+    dfAll = DataFrame()
+
+    for x in timeframe
+        df[!, :name] .= nameConvention(x)
+        if size(dfAll, 1) == 0
+            dfAll = calculate_car(df, x, data, market_data, date=date, idcol=idcol)
+        else
+            dfAll = vcat(dfAll, calculate_car(df, x, data, market_data, date=date, idcol=idcol))
         end
-        return dfAll
-    else
-        df = calculate_car_single(df, timeframes, data=data, date=date, idcol=idcol, market_data=market_data)
-        return df
     end
+    return dfAll
 end
+
+function calculate_car(
+    df::AbstractDataFrame,
+    timeframe::Array{retTimeframe},
+    data::ODBC.Connection;
+    date::String="date",
+    
+)
+    idcol::String="permno"
+
+    df = df[:, :]
+
+    dfAll = DataFrame()
+
+    for x in timeframe
+        df[!, :name] .= nameConvention(x)
+        if size(dfAll, 1) == 0
+            dfAll = calculate_car(df, x, data, date=date)
+        else
+            dfAll = vcat(dfAll, calculate_car(df, x, data, date=date))
+        end
+    end
+    return dfAll
+end
+
+# function calculate_car(
+#     df::AbstractDataFrame,
+#     timeframe::retTimeframe,
+#     data::AbstractDataFrame,
+#     market_data::AbstractDataFrame;
+#     date::String="date",
+#     idcol::String="permno"
+# )
+#     check_car_df(df)
+
+#     df = df[:, :]
+
+#     return calculate_car_single(df, timeframe, data, market_data, date=date, idcol=idcol)
+
+# end
+
+
+# function calculate_car(
+#     df::AbstractDataFrame,
+#     timeframes::Union{Array{retTimeframe},retTimeframe};
+#     data::Union{AbstractDataFrame, ODBC.Connection} = DataFrame(),
+#     date::String="date",
+#     idcol::String="permno",
+#     market_data::AbstractDataFrame=DataFrame()
+#     )
+#     if date ∉ names(df)
+#         throw(ArgumentError("The $date column is not found in the dataframe"))
+#     end
+#     if idcol ∉ names(df)
+#         throw(ArgumentError("The $idcol column is not found in the dataframe"))
+#     end
+#     if typeof(data) == ODBC.Connection && idcol != "permno"
+#         throw(ArgumentError("If connecting to WRDS, the idcol argument must be permno"))
+#     end
+
+
+#     df = df[:, :]
+
+#     if typeof(timeframes) <: Array
+#         dfAll = DataFrame()
+#         for timeframe in timeframes
+#             df[!, :name] .= nameConvention(timeframe)
+#             if size(dfAll, 1) == 0
+#                 dfAll = calculate_car_single(df, timeframe, data=data, date=date, idcol=idcol, market_data=market_data)
+#             else
+#                 dfAll = vcat(dfAll, calculate_car_single(df, timeframe, data=data, date=date, idcol=idcol, market_data=market_data))
+#             end
+#         end
+#         return dfAll
+#     else
+#         df = calculate_car_single(df, timeframes, data=data, date=date, idcol=idcol, market_data=market_data)
+#         return df
+#     end
+# end
 
 function calculateCAR(
     dsn,
