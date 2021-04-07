@@ -421,6 +421,44 @@ function parse_ons(on)
     return on1, on2
 end
 
+function join_helper(
+    df1,
+    df2,
+    on,
+    conditions,
+    args...
+)
+    #new_conditions = conditions |> parse_expression |> expressions_to_conditions
+    quote
+        $range_join(
+            $df1,
+            $df2,
+            $on,
+            $conditions;
+            $(args...)
+        )
+    end
+end
+
+# macro join(
+#     df1,
+#     df2,
+#     on,
+#     conditions,
+#     args...
+# )
+#     local new_conditions = conditions |> parse_expression |> expressions_to_conditions
+#     local aakws = [esc(a) for a in args]
+#     quote
+#         $range_join(
+#             $(df1),
+#             $(df2),
+#             $on,
+#             $new_conditions;
+#             $(aakws...)
+#         )
+#     end
+# end
 
 macro join(
     df1,
@@ -430,14 +468,6 @@ macro join(
     args...
 )
     local new_conditions = conditions |> parse_expression |> expressions_to_conditions
-    local aakws = [esc(a) for a in args]
-    quote
-        my_join(
-            $df1,
-            $df2,
-            $on,
-            $new_conditions;
-            $(aakws...)
-        )
-    end
+    #local aakws = [esc(a) for a in args]
+    esc(join_helper(df1, df2, on, new_conditions, args...))
 end
