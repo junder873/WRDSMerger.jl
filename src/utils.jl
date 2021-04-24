@@ -225,6 +225,7 @@ function range_join(
     df2::DataFrame,
     on,
     conditions::Array{Tuple{Function, Symbol, Symbol}};
+    minimize=nothing,
     join_conditions::Union{Array{Symbol}, Symbol}=:and,
     validate::Tuple{Bool, Bool}=(false, false),
     joinfun::Function=leftjoin
@@ -235,6 +236,12 @@ function range_join(
     df2[!, :_index2] = 1:nrow(df2)
 
     on1, on2 = parse_ons(on)
+
+    if minimize !== nothing
+        min1, min2 = parse_ons(minimize)
+        min1 = min1[1]
+        min2 = min2[1]
+    end
 
     gdf = groupby(df2, on2)
 
@@ -262,6 +269,12 @@ function range_join(
         end
 
         temp = temp[fil, :]
+
+        if nrow(temp) > 0 && minimize !== nothing
+            x = argmin(abs.(df1[i, min1] .- temp[:, min2]))
+
+            temp = temp[temp[:, min2] .== temp[x, min2], :]
+        end
 
         if nrow(temp) > 0
             df1[i, :_index2] = temp._index2
