@@ -15,7 +15,7 @@ CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 
 [compat]
 julia = "1"
-DataFrames = "≥ 0.20"
+DataFrames = "≥ 1.0"
 ODBC = "≥ 1.0"
 BusinessDays = "≥ 0.9"
 
