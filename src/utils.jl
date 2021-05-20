@@ -219,6 +219,9 @@ to work with ranges
 - `on`: either array of column names or matched pairs
 - `conditions::Array{Tuple{Function, Symbol, Symbol}}`: array of tuples where the tuple is (Function, left dataframe column symbol, right dataframe column symbol)
 - `joinfun::Function=leftjoin`: function being performed
+- `minimize`: either `nothing` or an array of column names or matched pairs, will only minimize 1 column
+- `join_conditions::Union{Array{Symbol}, Symbol}`: defaults to `:and`, otherwise an array of symbols that is 1 less than the length of conditions that the joins will happen in (:or or :and)
+- `validate::Tuple{Bool, Bool}`: Whether to validate a 1:1, many:1, or 1:many match
 """
 function range_join(
     df1::DataFrame,
@@ -245,8 +248,7 @@ function range_join(
 
     gdf = groupby(df2, on2)
 
-    df1[!, :_index2] = repeat([[0]], nrow(df1))
-
+    df1[!, :_index2] = repeat([Int[]], nrow(df1))
 
     Threads.@threads for i in 1:nrow(df1)
         temp = get(
@@ -270,7 +272,7 @@ function range_join(
 
         temp = temp[fil, :]
 
-        if nrow(temp) > 0 && minimize !== nothing
+        if nrow(temp) > 1 && minimize !== nothing
             x = argmin(abs.(df1[i, min1] .- temp[:, min2]))
 
             temp = temp[temp[:, min2] .== temp[x, min2], :]
@@ -285,7 +287,6 @@ function range_join(
 
 
     end
-
 
     df1 = flatten(df1, :_index2)
 
