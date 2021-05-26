@@ -210,6 +210,17 @@ end
 
 
 """
+
+    function range_join(
+        df1::DataFrame,
+        df2::DataFrame,
+        on,
+        conditions::Array{Tuple{Function, Symbol, Symbol}};
+        minimize=nothing,
+        join_conditions::Union{Array{Symbol}, Symbol}=:and,
+        validate::Tuple{Bool, Bool}=(false, false),
+        joinfun::Function=leftjoin
+    )
 Joins the dataframes based on a series of conditions, designed
 to work with ranges
 
@@ -222,6 +233,33 @@ to work with ranges
 - `minimize`: either `nothing` or an array of column names or matched pairs, will only minimize 1 column
 - `join_conditions::Union{Array{Symbol}, Symbol}`: defaults to `:and`, otherwise an array of symbols that is 1 less than the length of conditions that the joins will happen in (:or or :and)
 - `validate::Tuple{Bool, Bool}`: Whether to validate a 1:1, many:1, or 1:many match
+
+### Example
+
+```
+df1 = DataFrame(
+    firm=1:10,
+    date=Date.(2013, 1:10, 1:10)
+)
+
+df2 = df1[:, :]
+df2[!, :date_low] = df2.date .- Day(2)
+df2[!, :date_high] = df2.date .+ Day(2)
+select!(df2, Not(:date))
+
+range_join(
+    df1,
+    df2,
+    [:firm],
+    [
+        (<, :date, :date_high),
+        (>, :date, :date_low)
+    ],
+    join_conditions=[:and]
+)
+```
+
+
 """
 function range_join(
     df1::DataFrame,
@@ -262,8 +300,14 @@ function range_join(
         fil .= true
 
         for (j, (fun, lcol, rcol)) in enumerate(conditions)
-            temp_join = typeof(join_conditions) <: Symbol ? join_conditions : join_conditions[j-1]
-            if j == 1 || temp_join == :and
+            temp_join = if typeof(join_conditions) <: Symbol
+                join_conditions
+            elseif j == 1 # if it is the first time through, all the current values are true
+                :and
+            else
+                join_conditions[j-1]
+            end
+            if temp_join == :and
                 fil = fil .& broadcast(fun, df1[i, lcol], temp[:, rcol])
             else
                 fil = fil .| broadcast(fun, df1[i, lcol], temp[:, rcol])
