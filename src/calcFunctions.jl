@@ -122,7 +122,7 @@ function calculate_car(
     
     df = df[:, :]
     df_temp = DataFrame()
-    stockFile1 = "msf",
+    stockFile1 = "msf"
     stockFile2 = "msi"
     market_ret = String[]
     for x in timeframe
