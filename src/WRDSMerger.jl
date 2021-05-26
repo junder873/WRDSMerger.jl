@@ -24,8 +24,7 @@ using CSV
 export addIdentifiers, compustatCrspLink,
     getCompData,
     crspData, crspWholeMarket, crspStocknames,
-    calculateCAR,
-    setRetTimeframe, retTimeframe, setFFMethod, dateRangeJoin,
+    setRetTimeframe, retTimeframe, setFFMethod,
     ibesCrspLink, calculate_car,
     range_join, @join
 

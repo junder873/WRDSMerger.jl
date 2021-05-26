@@ -96,9 +96,21 @@ function crspWholeMarket(dsn;
     stockFile = "dsi",
     dateStart = Dates.Date(1925, 1, 1),
     dateEnd = Dates.today(),
-    col = "vwretd")
+    col = "vwretd"
+    )
+
+    cols = if typeof(col) <: String
+        [col, "date"]
+    elseif "date" ∉ col
+        vcat(col, ["date"])
+    else
+        col
+    end
+
+    col_str = createColString(cols)
+
     query = """
-                        select $col, date
+                        select $col_str
                         from crsp.$stockFile
                         where date between '$dateStart' and '$dateEnd'
                         """
@@ -125,14 +137,7 @@ function crspData(dsn,
         end
     end
 
-    colString = ""
-    for col in columns
-        if colString == ""
-            colString = col
-        else
-            colString = colString * ", " * col
-        end
-    end
+    colString = createColString(columns)
 
 
     

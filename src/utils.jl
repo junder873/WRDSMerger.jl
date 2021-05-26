@@ -302,7 +302,7 @@ function range_join(
         for (j, (fun, lcol, rcol)) in enumerate(conditions)
             temp_join = if typeof(join_conditions) <: Symbol
                 join_conditions
-            elseif j == 1 # if it is the first time through, all the current values are true
+            elseif j == 1 # if it is the first time through, all the current values are
                 :and
             else
                 join_conditions[j-1]
@@ -528,4 +528,17 @@ macro join(
     local new_conditions = conditions |> parse_expression |> expressions_to_conditions
     #local aakws = [esc(a) for a in args]
     esc(join_helper(df1, df2, on, new_conditions, args...))
+end
+
+function createColString(columns::Array{String})
+    
+    colString = ""
+    for col in columns
+        if colString == ""
+            colString = col
+        else
+            colString = colString * ", " * col
+        end
+    end
+    return colString
 end

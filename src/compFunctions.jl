@@ -19,18 +19,7 @@ function createFilter(filters::Union{Dict{String,String},Dict{String,Array{Strin
     return filterString
 end
 
-function createColString(columns::Array{String})
-    
-    colString = ""
-    for col in columns
-        if colString == ""
-            colString = col
-        else
-            colString = colString * ", " * col
-        end
-    end
-    return colString
-end
+
 
 function getCompData(dsn,
     df::DataFrame;
