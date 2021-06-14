@@ -4,7 +4,7 @@ authors = ["junder873 <junder873@gmail.com>"]
 version = "0.1.0"
 
 [deps]
-ODBC = "be6f12e9-ca4f-5eb2-a339-a4f995cc0291"
+LibPQ = "194296ae-ab2e-5f79-8cd4-7183a0a5a0d1"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 BusinessDays = "4f18b42c-503e-5345-9536-bb0f25fc7038"
@@ -16,7 +16,7 @@ CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 [compat]
 julia = "1"
 DataFrames = "≥ 1.0"
-ODBC = "≥ 1.0"
+LibPQ = "≥ 1.6"
 BusinessDays = "≥ 0.9"
 
 [extras]

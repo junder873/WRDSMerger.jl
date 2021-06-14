@@ -66,7 +66,7 @@ function crspStocknames(dsn;
         end
     end
 
-    stocknames = DBInterface.execute(dsn, query) |> DataFrame;
+    stocknames = LibPQ.execute(dsn, query) |> DataFrame;
     if "namedt" in cols
         stocknames[!, :namedt] = Dates.Date.(stocknames[:, :namedt])
     end
@@ -114,7 +114,7 @@ function crspWholeMarket(dsn;
                         from crsp.$stockFile
                         where date between '$dateStart' and '$dateEnd'
                         """
-    crsp = DBInterface.execute(dsn, query) |> DataFrame;
+    crsp = LibPQ.execute(dsn, query) |> DataFrame;
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
     return crsp
 end
@@ -340,7 +340,7 @@ function crspData(
         from crsp.$stockFile
         where date between '$(s)' and '$(e)'
     """
-    crsp = DBInterface.execute(dsn, query) |> DataFrame
+    crsp = LibPQ.execute(dsn, query) |> DataFrame
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
 
     return crsp
