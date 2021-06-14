@@ -14,6 +14,7 @@ using Statistics
 using FixedEffectModels
 using StringDistances
 using CSV
+using LibPQ
 
 ##############################################################################
 ##
