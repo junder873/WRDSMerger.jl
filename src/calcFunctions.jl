@@ -60,7 +60,7 @@ end
 function calculate_car(
     df::AbstractDataFrame,
     timeframe::retTimeframe,
-    data::ODBC.Connection;
+    data::LibPQ.Connection;
     date::String="date",
     idcol::String="permno"
 )
@@ -115,7 +115,7 @@ end
 function calculate_car(
     df::AbstractDataFrame,
     timeframe::Array{retTimeframe},
-    data::ODBC.Connection;
+    data::LibPQ.Connection;
     date::String="date",
     idcol::String="permno"
 )
