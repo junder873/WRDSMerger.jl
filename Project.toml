@@ -12,6 +12,7 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 FixedEffectModels = "9d5cd8c9-2029-5cab-9928-427838db53e3"
 StringDistances = "88034a9c-02f8-509d-84a9-84ec65e18404"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+ParallelKMeans = "42b8e9d4-006b-409a-8472-7f34b3fb58af"
 
 [compat]
 julia = "1"

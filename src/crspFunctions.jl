@@ -262,8 +262,8 @@ function crspData(dsn,
     query = "SELECT $colString FROM crsp.$stockFile WHERE "
 
     if pull_method == :optimize
-        df[!, :date_val] = Float64.(Dates.value.(df.dateStart))
-        cluster_max = length(unique(df.dateStart))
+        df[!, :date_val] = Float64.(Dates.value.(df[:, date_start]))
+        cluster_max = length(unique(df[:, date_start]))
         t_ests = Float64[]
         for clusters in 1:500:cluster_max+500
             c = min(clusters, cluster_max)
@@ -290,11 +290,10 @@ function crspData(dsn,
         temp = combine(
             gdf,
             :permno => create_permno_str => :permno_str,
-            :dateStart => minimum => :date_min,
-            :dateEnd => maximum => :date_max
+            date_start => minimum => :date_min,
+            date_end => maximum => :date_max
         )
-        #    :dateStart, :dateEnd] => (a, b, c) -> partial_sql_statement(a, b, c))
-        #rename!(temp, ["cluster", "s"])
+
         temp[!, :s] = partial_sql_statement.(temp.permno_str, temp.date_min, temp.date_max)
         query *= join(temp.s, " OR ")
     

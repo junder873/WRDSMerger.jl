@@ -14,6 +14,7 @@ using FixedEffectModels
 using StringDistances
 using CSV
 using LibPQ
+using ParallelKMeans
 
 ##############################################################################
 ##
