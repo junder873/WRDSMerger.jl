@@ -286,7 +286,11 @@ function range_join(
 
     gdf = groupby(df2, on2)
 
-    df1[!, :_index2] = repeat([Int[]], nrow(df1))
+    df1[!, :_index2] = if joinfun == leftjoin || joinfun == outerjoin
+        repeat([[0]], nrow(df1))
+    else
+        repeat([Int[]], nrow(df1))
+    end
 
     Threads.@threads for i in 1:nrow(df1)
         temp = get(
