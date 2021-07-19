@@ -68,7 +68,7 @@ function compustatCrspLink(dsn;
         end
     end
 
-    dfLink = DBInterface.execute(dsn, query) |> DataFrame;
+    dfLink = LibPQ.execute(dsn, query) |> DataFrame;
     if "linkdt" in cols
         dfLink[!, :linkdt] = Dates.Date.(dfLink[:, :linkdt])
     end
@@ -120,7 +120,7 @@ function cik_to_gvkey(
         end
     end
 
-    dfLink = DBInterface.execute(dsn, query) |> DataFrame
+    dfLink = LibPQ.execute(dsn, query) |> DataFrame
     return dfLink
 end
 
@@ -325,11 +325,11 @@ function ibesCrspLink(dsn)
     query = """
         SELECT * FROM crsp.stocknames
     """
-    dfStocknames = DBInterface.execute(dsn, query) |> DataFrame;
+    dfStocknames = LibPQ.execute(dsn, query) |> DataFrame;
     query = """
         SELECT * FROM ibes.idsum WHERE usfirm=1
     """
-    dfIbesNames = DBInterface.execute(dsn, query) |> DataFrame;
+    dfIbesNames = LibPQ.execute(dsn, query) |> DataFrame;
     dfIbesNames[!, :sdates] = Dates.Date.(dfIbesNames.sdates)
     for col in [:namedt, :nameenddt, :st_date, :end_date]
         dfStocknames[!, col] = Dates.Date.(dfStocknames[:, col])

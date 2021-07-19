@@ -66,7 +66,7 @@ function crspStocknames(dsn;
         end
     end
 
-    stocknames = DBInterface.execute(dsn, query) |> DataFrame;
+    stocknames = LibPQ.execute(dsn, query) |> DataFrame;
     if "namedt" in cols
         stocknames[!, :namedt] = Dates.Date.(stocknames[:, :namedt])
     end
@@ -114,20 +114,133 @@ function crspWholeMarket(dsn;
                         from crsp.$stockFile
                         where date between '$dateStart' and '$dateEnd'
                         """
-    crsp = DBInterface.execute(dsn, query) |> DataFrame;
+    crsp = LibPQ.execute(dsn, query) |> DataFrame;
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
     return crsp
 end
 
+function main_and_statement(permno, date_start, date_end)
+    "(date BETWEEN '$(date_start)' AND '$(date_end)' AND permno = $(permno))"
+end
+
+function partial_sql_statement(
+        permno::Real,
+        date_start::Date,
+        date_end::Date;
+        identifier::String="permno",
+        date_col::String="date"
+    )
+    permno = Int(permno)
+    "($date_col BETWEEN '$(date_start)' AND '$(date_end)' AND $identifier = $(permno))"
+end
+
+function partial_sql_statement(
+        permno::String,
+        date_start::Date,
+        date_end::Date;
+        identifier::String="permno",
+        date_col::String="date"
+    )
+    "($date_col BETWEEN '$(date_start)' AND '$(date_end)' AND $identifier IN ($(permno)))"
+end
+
+function create_permno_str(permnos::AbstractArray{<:Real})
+    join(Int.(unique(permnos)), ",")
+end
+function partial_sql_statement(
+        permnos::AbstractArray{<:Real},
+        date_starts::AbstractArray{Date},
+        date_ends::AbstractArray{Date};
+        identifier::String="permno",
+        date_col::String="date"
+    )
+    if length(permnos) == 1
+        return partial_sql_statement(permnos[1], date_starts[1], date_ends[1]; identifier, date_col)
+    end
+    permnos_str = join(Int.(unique(permnos)), ",")
+    min_date = minimum(date_starts)
+    max_date = maximum(date_ends)
+    partial_sql_statement(permno_str, min_date, max_date; identifier, date_col)
+end
+function partial_sql_statement(
+        df::AbstractDataFrame;
+        date_start::String="dateStart",
+        date_end::String="dateEnd",
+        identifier::String="permno",
+        date_col::String="date"
+    )
+    if nrow(df) == 1
+        return partial_sql_statement(df[1, :]; date_start, date_end, identifier, date_col)
+    end
+    permnos = join(Int.(unique(df[:, identifier])), ",")
+    min_date = minimum(df[:, date_start])
+    max_date = maximum(df[:, date_end])
+    partial_sql_statement(permnos, min_date, max_date; identifier, date_col)
+end
+
+function partial_sql_statement(
+        df::DataFrameRow;
+        date_start::String="dateStart",
+        date_end::String="dateEnd",
+        identifier::String="permno",
+        date_col::String="date"
+    )
+    "($date_col BETWEEN '$(df[date_start])' AND '$(df[date_end])' AND $identifier = $(df[identifier]))"
+end
+
+function file_size_estimate(
+        df;
+        date_start::String="dateStart",
+        date_end::String="dateEnd",
+        cluster_col::String="cluster",
+        firm_col::String="permno"
+    )
+    temp = combine(
+        groupby(df, cluster_col),
+        date_start => minimum => "min_date",
+        date_end => maximum => "max_date",
+        firm_col => length ∘ unique => "firm_count"
+        )
+    temp[!, :total_days] = bdayscount.(:USNYSE, temp.min_date, temp.max_date) .+ isbday.(:USNYSE, temp.max_date)
+    return sum(temp.firm_count .* temp.total_days)
+end
+function data_time_estimate(
+        obs;
+        intercept=1000,
+        slope=0.0200079
+    )
+    intercept + slope * obs
+end
+function cluster_time_estimate(
+        clusters;
+        intercept=32.3731,
+        slope=0.0236368,
+    )
+    (intercept + clusters * slope) ^ 2
+end
+function total_time_estimate(
+        df;
+        date_start::String="dateStart",
+        date_end::String="dateEnd",
+        cluster_col::String="cluster",
+        firm_col::String="permno"
+    )
+    row_count = file_size_estimate(df; date_start, date_end, cluster_col, firm_col)
+    data_time = data_time_estimate(row_count)
+    cluster_time = cluster_time_estimate(length(unique(df[:, cluster_col])))
+    return data_time + cluster_time
+end
+    
 function crspData(dsn,
     df::DataFrame;
     stockFile = "dsf",
     columns = ["ret", "vol", "shrout"],
     pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
     date_start::String="dateStart",
-    date_end::String="dateEnd"
+    date_end::String="dateEnd",
+    exe=LibPQ.execute
 )
-
+    df = df[:, :]
     for col in ["permno", date_start, date_end]
         if col ∉ names(df)
             @error("$col must be in the DataFrame")
@@ -145,34 +258,55 @@ function crspData(dsn,
     end
 
     colString = createColString(columns)
-
-
     
-    if (pull_method == :optimize && 100 < size(df, 1) && length(unique(df[:, :permno])) < 1000) || pull_method == :stockonly
-        permnos = join(Int.(unique(df[:, :permno])), ",")
-        query = """
-                    select $colString
-                    from crsp.$stockFile
-                    where date between '$(minimum(df[:, date_start]))' and '$(maximum(df[:, date_end]))' and permno IN ($permnos)
-                """
-        
-    elseif (pull_method == :optimize && size(df, 1) > 100) || pull_method == :alldata
-        query = """
-            select $colString
-            from crsp.$stockFile
-            where date between '$(minimum(df[:, date_start]))' and '$(maximum(df[:, date_end]))'
-        """
-    else
-        query = "SELECT $colString from crsp.$stockFile WHERE "
-        for i in 1:size(df, 1)
-            if i != 1
-                query *= " OR "
-            end
+    query = "SELECT $colString FROM crsp.$stockFile WHERE "
 
-            query *= "(WHERE date BETWEEN '$(df[i, date_start])' AND '$(df[i, date_end])' AND permno = $(df[i, :permno]))"
+    if pull_method == :optimize
+        df[!, :date_val] = Float64.(Dates.value.(df[:, date_start]))
+        cluster_max = length(unique(df[:, date_start]))
+        t_ests = Float64[]
+        for clusters in 1:500:cluster_max+500
+            c = min(clusters, cluster_max)
+            t1 = now()
+            x = ParallelKMeans.kmeans(Hamerly(), Matrix(df[:, [:date_val]])', c)
+            if clusters > 1
+                old_clusters = df.cluster
+            end
+            df[!, :cluster] = x.assignments
+            t2 = now()
+            t_est = total_time_estimate(df; date_start, date_end, cluster_col="cluster", firm_col="permno")
+            if length(t_ests) > 0 && t_ests[end] - t_est < Dates.value(t2 - t1)
+                if t_ests[end] < t_est
+                    df[!, :cluster] = old_clusters
+                end
+                break
+            else
+                push!(t_ests, t_est)
+            end
         end
+            
+        gdf = groupby(df, :cluster)
+        #println("Cluster count: ", length(gdf))
+        temp = combine(
+            gdf,
+            :permno => create_permno_str => :permno_str,
+            date_start => minimum => :date_min,
+            date_end => maximum => :date_max
+        )
+
+        temp[!, :s] = partial_sql_statement.(temp.permno_str, temp.date_min, temp.date_max)
+        query *= join(temp.s, " OR ")
+    
+    elseif pull_method == :stockonly
+        permnos = join(Int.(unique(df[:, :permno])), ",")
+        query *= "date between '$(minimum(df[:, date_start]))' and '$(maximum(df[:, date_end]))' and permno IN ($permnos)"
+        
+    elseif pull_method == :alldata
+        query *= "date between '$(minimum(df[:, date_start]))' and '$(maximum(df[:, date_end]))'"
+    else
+        query *= join(main_and_statement.(df.permno, df[:, date_start], df[:, date_end]), " OR ")
     end
-    crsp = DBInterface.execute(dsn, query) |> DataFrame
+    crsp = exe(dsn, query) |> DataFrame
 
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
 
@@ -205,7 +339,7 @@ function crspData(
         from crsp.$stockFile
         where date between '$(s)' and '$(e)'
     """
-    crsp = DBInterface.execute(dsn, query) |> DataFrame
+    crsp = LibPQ.execute(dsn, query) |> DataFrame
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
 
     return crsp

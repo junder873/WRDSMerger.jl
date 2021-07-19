@@ -5,7 +5,6 @@ module WRDSMerger
 ## Dependencies
 ##
 ##############################################################################
-using ODBC
 using DataFrames
 using Dates
 using BusinessDays
@@ -14,6 +13,8 @@ using Statistics
 using FixedEffectModels
 using StringDistances
 using CSV
+using LibPQ
+using ParallelKMeans
 
 ##############################################################################
 ##

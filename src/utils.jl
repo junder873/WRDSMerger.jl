@@ -230,7 +230,7 @@ to work with ranges
 - `on`: either array of column names or matched pairs
 - `conditions::Array{Tuple{Function, Symbol, Symbol}}`: array of tuples where the tuple is (Function, left dataframe column symbol, right dataframe column symbol)
 - `joinfun::Function=leftjoin`: function being performed
-- `minimize`: either `nothing` or an array of column names or matched pairs, will only minimize 1 column
+- `minimize`: either `nothing` or an array of column names or matched pairs, minimization will take place in order
 - `join_conditions::Union{Array{Symbol}, Symbol}`: defaults to `:and`, otherwise an array of symbols that is 1 less than the length of conditions that the joins will happen in (:or or :and)
 - `validate::Tuple{Bool, Bool}`: Whether to validate a 1:1, many:1, or 1:many match
 
@@ -280,13 +280,17 @@ function range_join(
 
     if minimize !== nothing
         min1, min2 = parse_ons(minimize)
-        min1 = min1[1]
-        min2 = min2[1]
+        # min1 = min1[1]
+        # min2 = min2[1]
     end
 
     gdf = groupby(df2, on2)
 
-    df1[!, :_index2] = repeat([Int[]], nrow(df1))
+    df1[!, :_index2] = if joinfun == leftjoin || joinfun == outerjoin
+        repeat([[0]], nrow(df1))
+    else
+        repeat([Int[]], nrow(df1))
+    end
 
     Threads.@threads for i in 1:nrow(df1)
         temp = get(
@@ -317,9 +321,12 @@ function range_join(
         temp = temp[fil, :]
 
         if nrow(temp) > 1 && minimize !== nothing
-            x = argmin(abs.(df1[i, min1] .- temp[:, min2]))
+            for j in 1:length(min1)
 
-            temp = temp[temp[:, min2] .== temp[x, min2], :]
+                x = argmin(abs.(df1[i, min1[j]] .- temp[:, min2[j]]))
+
+                temp = temp[temp[:, min2[j]] .== temp[x, min2[j]], :]
+            end
         end
 
         if nrow(temp) > 0

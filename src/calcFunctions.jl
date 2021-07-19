@@ -6,7 +6,10 @@ function calculate_car(
     market_data::AbstractDataFrame;
     date::String="date",
     idcol::String="permno",
-    
+    out_cols=[
+        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
+        ["car"] .=> std
+    ]
 )
     if date ∉ names(df)
         throw(ArgumentError("The $date column is not found in the dataframe"))
@@ -52,7 +55,7 @@ function calculate_car(
     select!(df2, Not([:plus1_prod, :plus1m_prod]))
     select!(df, Not([:plus1, :plus1m]))
     gd = groupby(df, aggCols)
-    df = combine(gd, valuecols(gd) .=> sum, valuecols(gd) .=> std)
+    df = combine(gd, out_cols...)
     df = leftjoin(df, df2, on=aggCols)
     return df
 end
@@ -60,7 +63,7 @@ end
 function calculate_car(
     df::AbstractDataFrame,
     timeframe::retTimeframe,
-    data::ODBC.Connection;
+    data::LibPQ.Connection;
     date::String="date",
     idcol::String="permno"
 )
@@ -115,7 +118,7 @@ end
 function calculate_car(
     df::AbstractDataFrame,
     timeframe::Array{retTimeframe},
-    data::ODBC.Connection;
+    data::LibPQ.Connection;
     date::String="date",
     idcol::String="permno"
 )

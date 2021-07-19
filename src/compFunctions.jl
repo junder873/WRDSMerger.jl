@@ -49,7 +49,7 @@ function getCompData(dsn,
         push!(query, temp_query)
     end
 
-    comp = DBInterface.execute(dsn, join(query, " UNION ")) |> DataFrame;
+    comp = LibPQ.execute(dsn, join(query, " UNION ")) |> DataFrame;
     comp[!, :datadate] = Dates.Date.(comp[:, :datadate]);
 
     return comp
@@ -76,7 +76,7 @@ function getCompData(dsn,
         from compa.$fund
         where datadate between '$dateStart' and '$dateEnd' $filterString"""
     
-    comp = DBInterface.execute(dsn, query) |> DataFrame;
+    comp = LibPQ.execute(dsn, query) |> DataFrame;
     comp[!, :datadate] = Dates.Date.(comp[:, :datadate])
 
     return comp
