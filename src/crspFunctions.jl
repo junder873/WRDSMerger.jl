@@ -122,13 +122,20 @@ end
 function crspData(dsn,
     df::DataFrame;
     stockFile = "dsf",
-    columns = ["ret", "vol", "shrout"])
+    columns = ["ret", "vol", "shrout"],
+    pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
+    date_start::String="dateStart",
+    date_end::String="dateEnd"
+)
 
-    for col in ["permno", "dateStart", "dateEnd"]
+    for col in ["permno", date_start, date_end]
         if col ∉ names(df)
-            println("$col must be in the DataFrame")
-            return 0
+            @error("$col must be in the DataFrame")
         end
+    end
+    pull_methods = [:optimize, :minimize, :stockonly, :alldata]
+    if pull_method ∉ pull_methods
+        @error("pull_method must be one of $pull_methods")
     end
 
     for col in ["permno", "date"]
@@ -141,34 +148,32 @@ function crspData(dsn,
 
 
     
-    if 100 < size(df, 1) && length(unique(df[:, :permno])) < 1000
+    if (pull_method == :optimize && 100 < size(df, 1) && length(unique(df[:, :permno])) < 1000) || pull_method == :stockonly
         permnos = join(Int.(unique(df[:, :permno])), ",")
         query = """
                     select $colString
                     from crsp.$stockFile
-                    where date between '$(minimum(df[:, :dateStart]))' and '$(maximum(df[:, :dateEnd]))' and permno IN ($permnos)
+                    where date between '$(minimum(df[:, date_start]))' and '$(maximum(df[:, date_end]))' and permno IN ($permnos)
                 """
-        crsp = DBInterface.execute(dsn, query) |> DataFrame
-    elseif 100 < size(df, 1)
+        
+    elseif (pull_method == :optimize && size(df, 1) > 100) || pull_method == :alldata
         query = """
             select $colString
             from crsp.$stockFile
-            where date between '$(minimum(df[:, :dateStart]))' and '$(maximum(df[:, :dateEnd]))'
+            where date between '$(minimum(df[:, date_start]))' and '$(maximum(df[:, date_end]))'
         """
-        crsp = DBInterface.execute(dsn, query) |> DataFrame
     else
-        query = String[]
+        query = "SELECT $colString from crsp.$stockFile WHERE "
         for i in 1:size(df, 1)
-            temp_query = """
-                            (select $colString
-                            from crsp.$stockFile
-                            where date between '$(df[i, :dateStart])' and '$(df[i, :dateEnd])' and permno = $(df[i, :permno]))
-                            """
-            push!(query, temp_query)
-        end
+            if i != 1
+                query *= " OR "
+            end
 
-        crsp = DBInterface.execute(dsn, join(query, " UNION ")) |> DataFrame;
+            query *= "(WHERE date BETWEEN '$(df[i, date_start])' AND '$(df[i, date_end])' AND permno = $(df[i, :permno]))"
+        end
     end
+    crsp = DBInterface.execute(dsn, query) |> DataFrame
+
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
 
     return crsp
