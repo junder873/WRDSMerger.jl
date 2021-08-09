@@ -129,12 +129,12 @@ function calculate_car(
     stockFile2 = "msi"
     market_ret = String[]
     for x in timeframe
-        df[!, :dateStart] = calculateDays(df[:, date], timeframe.businessDays[1], timeframe.subtraction, timeframe.monthPeriod)
-        df[!, :dateEnd] = calculateDays(df[:, date], timeframe.businessDays[2], timeframe.addition, timeframe.monthPeriod)
+        df[!, :dateStart] = calculateDays(df[:, date], x.businessDays[1], x.subtraction, x.monthPeriod)
+        df[!, :dateEnd] = calculateDays(df[:, date], x.businessDays[2], x.addition, x.monthPeriod)
         if nrow(df_temp) == 0
-            df_temp = df[:, [idcol, "dateStart", "dateEnd"]]
+            df_temp = df[:, [idcol, date, "dateStart", "dateEnd"]]
         else
-            df_temp = vcat(df_temp, df[:, [idcol, "dateStart", "dateEnd"]])
+            df_temp = vcat(df_temp, df[:, [idcol, date, "dateStart", "dateEnd"]])
         end
         if !x.monthPeriod # if any of the time periods are not monthly, download the daily file
             stockFile1 = "dsf"
@@ -142,16 +142,18 @@ function calculate_car(
         end
         push!(market_ret, x.marketReturn)
     end
-    gdf = groupby(df_temp, idcol)
+    gdf = groupby(df_temp, [idcol, date])
     df_temp = combine(gdf, "dateStart" => minimum => "dateStart", "dateEnd" => maximum => "dateEnd")
 
     crsp = crspData(data, df_temp, stockFile = stockFile1)
+    println(first(crsp, 30))
     crspM = crspWholeMarket(data,
         stockFile = stockFile2,
         dateStart = minimum(df_temp[:, :dateStart]),
         dateEnd = maximum(df_temp[:, :dateEnd]),
         col = unique(market_ret)
     )
+    println(first(crspM, 30))
 
     return calculate_car(df, timeframe, crsp, crspM; date=date, idcol=idcol)
 

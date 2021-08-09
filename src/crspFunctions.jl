@@ -231,7 +231,8 @@ function total_time_estimate(
     return data_time + cluster_time
 end
     
-function crspData(dsn,
+function crspData(
+    dsn,
     df::DataFrame;
     stockFile = "dsf",
     columns = ["ret", "vol", "shrout"],
@@ -286,7 +287,7 @@ function crspData(dsn,
         end
             
         gdf = groupby(df, :cluster)
-        #println("Cluster count: ", length(gdf))
+        println("Cluster count: ", length(gdf))
         temp = combine(
             gdf,
             :permno => create_permno_str => :permno_str,
@@ -306,6 +307,7 @@ function crspData(dsn,
     else
         query *= join(main_and_statement.(df.permno, df[:, date_start], df[:, date_end]), " OR ")
     end
+
     crsp = exe(dsn, query) |> DataFrame
 
     crsp[!, :date] = Dates.Date.(crsp[:, :date]);
