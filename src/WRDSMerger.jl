@@ -22,9 +22,8 @@ using ParallelKMeans
 ##
 ##############################################################################
 
-export addIdentifiers, compustatCrspLink,
-    getCompData,
-    crspData, crspWholeMarket, crspStocknames,
+export link_identifiers, comp_data,
+    crsp_data, crsp_market, crsp_stocknames,
     setRetTimeframe, retTimeframe, setFFMethod,
     ibesCrspLink, calculate_car,
     range_join, @join

@@ -38,7 +38,8 @@ function setFFMethod(
     return ffMethod(subtraction, addition, maxRelativeToMin, businessDays, monthPeriod, rf, funSymbols, df, minObs)
 end
 
-function calculateDays(dates::Array{Date},
+function calculateDays(
+    dates::Array{Date},
     businessDays::Bool,
     change::Int,
     month::Bool;
@@ -114,19 +115,22 @@ function setNewDate(col1, col2)
     return ret
 end
 
-function getCrspNames(dsn, df, col, ignore; datecol="date", identifying_col::String="permno")
-    permno::Array{<:Number} = Int[]
-    ncusip::Array{String} = String[]
-    cusip::Array{String} = String[]
+function getCrspNames(
+    dsn::LibPQ.Connection,
+    df,
+    col,
+    ignore;
+    datecol="date",
+    identifying_col::String="permno")
     df = dropmissing(df, col)
-    if identifying_col == "permno"
-        permno = df[:, col]
+    crsp = if identifying_col == "permno"
+        crsp_stocknames(dsn, df[:, col]; warn_on_long=false) |> unique
     elseif identifying_col == "cusip"
-        cusip = df[:, col]
+        crsp_stocknames(dsn, df[:, col]; warn_on_long=false) |> unique
     else
-        ncusip = df[:, col]
+        crsp_stocknames(dsn, df[:, col]; warn_on_long=false, cusip_col="ncusip") |> unique
     end
-    crsp = unique(crspStocknames(dsn, permno=permno, cusip=cusip, ncusip=ncusip, cols=["permno", "ncusip", "cusip", "namedt", "nameenddt"]))
+    select!(crsp, Not(:ticker))
     for x in ignore
         if x in names(crsp) # Removes the column if it would create a duplicate
             select!(crsp, Not(x))
@@ -145,67 +149,6 @@ function getCrspNames(dsn, df, col, ignore; datecol="date", identifying_col::Str
     return df
 end
 
-function myJoin(df1::DataFrame, df2::DataFrame)
-    CSV.write("G:\\My Drive\\python\\tests\\carMerge1.csv", df1)
-    CSV.write("G:\\My Drive\\python\\tests\\carMerge2.csv", df2)
-    t = ndsparse(
-        (permno = df2[:, :permno], retDate = df2[:, :retDate]),
-        (index = 1:size(df2, 1),),
-    )
-    ret = DataFrame(index1 = Int[], index2 = Int[])
-    for i = 1:size(df1, 1)
-        res = t[
-            df1[i, :permno],
-            collect(df1[i, :dateStart]:Day(1):df1[i, :dateEnd])
-        ]
-        for v in rows(res)
-            push!(ret, (i, v.index))
-        end
-    end
-    df1[!, :index1] = 1:size(df1, 1)
-    df2[!, :index2] = 1:size(df2, 1)
-    df1 = leftjoin(df1, ret, on=:index1)
-    select!(df1, Not(:permno))
-    df1 = leftjoin(df1, df2, on=:index2)
-    select!(df1, Not([:index1, :index2]))
-    return df1
-end
-
-"""
-Joins the left dataframe with a daterange (though this can be any range) and
-the right dataframe with a date.
-
-### Arguments
-- `df1`: DataFrame with the range
-- `df2`: DataFrame with a specific value that fits between the range
-- `on`: Vector of column names that match is on (not including the range variables)
-- `validate::Tuple{Bool, Bool} = (false, false)`: whether to make sure matches are unique
-- `dateColMin::Union{String, Symbol} = "datemin"`: column name in left dataframe that is the minimum value
-- `dateColMax::Union{String, Symbol} = "datemax"`: column name in left dataframe that is the max value
-- `dateColTest::Union{String, Symbol} = "date"`: column name in right dataframe that fits between the min and max
-- `joinfun::Function = leftjoin`: the function being performed, mainly leftjoin or rightjoin
-
-"""
-function dateRangeJoin(
-    df1::AbstractDataFrame,
-    df2::AbstractDataFrame;
-    on::Union{Array{Symbol}, Array{String}} = Symbol[],
-    validate::Tuple{Bool, Bool} = (false, false),
-    dateColMin::Union{String, Symbol} = "datemin",
-    dateColMax::Union{String, Symbol} = "datemax",
-    dateColTest::Union{String, Symbol} = "date",
-    joinfun::Function = leftjoin
-)
-    return range_join(
-        df1,
-        df2,
-        on,
-        [(<=, Symbol(dateColMin), Symbol(dateColTest)), (>=, Symbol(dateColMax), Symbol(dateColTest))];
-        validate,
-        joinfun
-
-    )
-end
 
 
 
@@ -505,26 +448,6 @@ function join_helper(
     end
 end
 
-# macro join(
-#     df1,
-#     df2,
-#     on,
-#     conditions,
-#     args...
-# )
-#     local new_conditions = conditions |> parse_expression |> expressions_to_conditions
-#     local aakws = [esc(a) for a in args]
-#     quote
-#         $range_join(
-#             $(df1),
-#             $(df2),
-#             $on,
-#             $new_conditions;
-#             $(aakws...)
-#         )
-#     end
-# end
-
 macro join(
     df1,
     df2,
@@ -535,17 +458,4 @@ macro join(
     local new_conditions = conditions |> parse_expression |> expressions_to_conditions
     #local aakws = [esc(a) for a in args]
     esc(join_helper(df1, df2, on, new_conditions, args...))
-end
-
-function createColString(columns::Array{String})
-    
-    colString = ""
-    for col in columns
-        if colString == ""
-            colString = col
-        else
-            colString = colString * ", " * col
-        end
-    end
-    return colString
 end

@@ -1,87 +1,109 @@
-function crspStocknames(dsn;
-    cusip::Array{String} = String[],
-    ncusip::Array{String} = String[],
-    permno::Array{<:Number} = Int[],
-    cols::Array{String} = ["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"])
 
-    if sum(length.([cusip, ncusip, permno]) .> 0) > 1 # Tests if any array has data, sums to test if multiple have data
-        println("Only one of the identifying columns can have values in it")
-        println("Please retry where only one of cusip, ncusip, and permno")
-        return 0
-    end
+"""
+    function crsp_stocknames(
+        dsn::LibPQ.Connection;
+        cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"]
+    )
 
-    stocknames = DataFrame()
+Download all crsp.stockname data (with non-missing ncusip), expects a case of a LibPQ.Connection
 
-    colString = ""
-    for col in cols
-        if colString == ""
-            colString = col
-        else
-            colString = colString * ", " * col
-        end
-    end
+"""
+function crsp_stocknames(
+    dsn::LibPQ.Connection;
+    cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"]
+)
+    col_str = join(cols, ", ")
 
-    query = ""
-    if sum(length.([cusip, ncusip, permno]) .> 0) == 0 ||  sum(length.([cusip, ncusip, permno]) .> 100) > 0# If no restrictions, get all data
-        query = """
-                            select distinct $colString
-                            from crsp.stocknames
-                            where ncusip != ''
-                            """
-        
-    else
-        for arg in [cusip, ncusip, permno]
-            if length(arg) > 0
-                var = ""
-                queryL = String[]
-                if length(permno) > 0
-                    var = "permno"
-                    for x in arg
-                        temp_query = """
-                                        (select $colString
-                                        from crsp.stocknames
-                                        where ncusip != '' and $var = $x)
-                                        """
-                        push!(queryL, temp_query)
-                    end
-                else
-                    if length(ncusip) > 0
-                        var = "ncusip"
-                    else
-                        var = "cusip"
-                    end
-                        for x in arg
-                        temp_query = """
-                                        (select $colString
-                                        from crsp.stocknames
-                                        where ncusip != '' and $var = '$x')
-                                        """
-                        push!(queryL, temp_query)
-                    end
-                end
-                
-                
-                query = join(queryL, " UNION ")
-            end
-        end
-    end
-
-    stocknames = LibPQ.execute(dsn, query) |> DataFrame;
-    if "namedt" in cols
-        stocknames[!, :namedt] = Dates.Date.(stocknames[:, :namedt])
-    end
-    if "nameenddt" in cols
-        stocknames[!, :nameenddt] = Dates.Date.(stocknames[:, :nameenddt]);
-    end
-    return stocknames
+    query = """
+        SELECT DISTINCT $col_str
+        FROM crsp.stocknames
+        WHERE ncusip != ''
+    """
+    return LibPQ.execute(dsn, query) |> DataFrame
 end
 
 """
-crspWholeMarket(dsn;
-    stockFile = "dsi",
-    dateStart = Dates.Date(1925, 1, 1),
-    dateEnd = Dates.today(),
-    col = "vwretd")
+    function crsp_stocknames(
+        dsn::LibPQ.Connection,
+        cusip::Array{String};
+        cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
+        cusip_col="cusip", # either "cusip" or "ncusip"
+        warn_on_long=true
+    )
+
+Download crsp.stockname data (with non-missing ncusip) that matches a cusip or ncusip, expects a case of a LibPQ.Connection
+`cusip` must be an array of strings that match either a cusip or ncusip, if using ncusip, then add then set
+`cusip_cols="ncusip"` to filter on the correct column.
+
+"""
+function crsp_stocknames(
+    dsn::LibPQ.Connection,
+    cusip::Array{String};
+    cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
+    cusip_col="cusip", # either "cusip" or "ncusip"
+    warn_on_long=true
+)
+    if cusip_col ∉ ["cusip", "ncusip"]
+        @error("`cusip_col` must be one of \"cusip\" or \"ncusip\"")
+    end
+    if length(cusip) > 100 && warn_on_long
+        @warn("Due to the size of the filter, it might be faster to download all data")
+    end
+    col_str = join(cols, ", ")
+    fil_str = join(cusip, "', '")
+
+    query = """
+        SELECT DISTINCT $col_str
+        FROM crsp.stocknames
+        WHERE ncusip != ''
+        AND $cusip_col IN ('$(fil_str)')
+    """
+    return LibPQ.execute(dsn, query) |> DataFrame
+end
+
+"""
+    function crsp_stocknames(
+        dsn::LibPQ.Connection,
+        permno::Array{<:Number};
+        cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
+        warn_on_long=true
+    )
+
+Download crsp.stockname data (with non-missing ncusip) that matches a permno, expects a case of a LibPQ.Connection
+`permno` must be an array of numbers.
+
+"""
+function crsp_stocknames(
+    dsn::LibPQ.Connection,
+    permno::Array{<:Number};
+    cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
+    warn_on_long=true
+)
+    if length(cusip) > 100 && warn_on_long
+        @warn("Due to the size of the filter, it might be faster to download all data")
+    end
+    col_str = join(cols, ", ")
+    fil_str = join(permno, ", ")
+
+    query = """
+        SELECT DISTINCT $col_str
+        FROM crsp.stocknames
+        WHERE ncusip != ''
+        AND permno IN ($(fil_str))
+    """
+    return LibPQ.execute(dsn, query) |> DataFrame
+end
+
+
+
+"""
+    function crsp_market(
+        dsn::LibPQ.Connection;
+        stockFile = "dsi",
+        dateStart = Dates.Date(1925, 1, 1),
+        dateEnd = Dates.today(),
+        col = "vwretd"
+    )
 
 Downloads the data from the daily or monthly stock index file (dsi and msi) for a range of dates with one value
 for each day (with various return columns). Available columns are:
@@ -92,7 +114,8 @@ for each day (with various return columns). Available columns are:
 - "ewretx": Equal weighted return without dividends
 - "sprtrn": S&P500 return
 """
-function crspWholeMarket(dsn;
+function crsp_market(
+    dsn::LibPQ.Connection;
     stockFile = "dsi",
     dateStart = Dates.Date(1925, 1, 1),
     dateEnd = Dates.today(),
@@ -107,7 +130,7 @@ function crspWholeMarket(dsn;
         col
     end
 
-    col_str = createColString(cols)
+    col_str = join(cols, ", ")
 
     query = """
                         select $col_str
@@ -115,7 +138,6 @@ function crspWholeMarket(dsn;
                         where date between '$dateStart' and '$dateEnd'
                         """
     crsp = LibPQ.execute(dsn, query) |> DataFrame;
-    crsp[!, :date] = Dates.Date.(crsp[:, :date]);
     return crsp
 end
 
@@ -144,9 +166,8 @@ function partial_sql_statement(
     "($date_col BETWEEN '$(date_start)' AND '$(date_end)' AND $identifier IN ($(permno)))"
 end
 
-function create_permno_str(permnos::AbstractArray{<:Real})
-    join(Int.(unique(permnos)), ",")
-end
+create_permno_str(permnos::AbstractArray{<:Real}) = join(Int.(unique(permnos)), ",")
+
 function partial_sql_statement(
         permnos::AbstractArray{<:Real},
         date_starts::AbstractArray{Date},
@@ -157,7 +178,7 @@ function partial_sql_statement(
     if length(permnos) == 1
         return partial_sql_statement(permnos[1], date_starts[1], date_ends[1]; identifier, date_col)
     end
-    permnos_str = join(Int.(unique(permnos)), ",")
+    permno_str = create_permno_str(permnos)
     min_date = minimum(date_starts)
     max_date = maximum(date_ends)
     partial_sql_statement(permno_str, min_date, max_date; identifier, date_col)
@@ -230,16 +251,47 @@ function total_time_estimate(
     cluster_time = cluster_time_estimate(length(unique(df[:, cluster_col])))
     return data_time + cluster_time
 end
-    
-function crspData(
-    dsn,
+
+
+"""
+    function crsp_data(
+        dsn::LibPQ.Connection,
+        df::DataFrame;
+        stockFile = "dsf",
+        columns = ["ret", "vol", "shrout"],
+        pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
+        date_start::String="dateStart",
+        date_end::String="dateEnd",
+    )
+
+Downloads data from the crsp stockfiles, which are individual stocks.
+
+# Arguments
+- `stock_file::String="dsf"`: must be either "dsf" or "msf" for daily or monthly, respectively
+- `pull_method::Symbol=:optimize`: designates the method the function will pull the data,
+        to help minimize the amount of data needed. The available methods are:
+    - `:optimize`: uses a clustering algorithm (kmeans) to find common or nearby dates
+        which then is used to pull data for that group of stocks around that date. Since
+        finding the appropriate number of clusters takes time, it does so in steps of 500
+        and estimates the time to download that much data and for WRDS to process the request
+        (more data = longer time, more chunks = longer time)
+    - `:minimize`: pulls data for each stock individually, resulting in only necessary
+        data being downloaded. However, due to WRDS taking exponentially more time for
+        each `OR` statement, this can get very slow with large datasets, ideal for
+        small datasets with disperse data
+    - `:stockonly`: retrieves all data between the minimum and maximum date in the dataset
+        for all firms that are listed, ideal if the minimim and maximum date needed are close
+        to each other
+    - `:alldata`: retrieves all data between the minimum and maximum date
+"""
+function crsp_data(
+    dsn::LibPQ.Connection,
     df::DataFrame;
-    stockFile = "dsf",
+    stock_file::String = "dsf",
     columns = ["ret", "vol", "shrout"],
     pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
     date_start::String="dateStart",
     date_end::String="dateEnd",
-    exe=LibPQ.execute
 )
     df = df[:, :]
     for col in ["permno", date_start, date_end]
@@ -258,9 +310,9 @@ function crspData(
         end
     end
 
-    colString = createColString(columns)
+    colString = join(columns, ", ")
     
-    query = "SELECT $colString FROM crsp.$stockFile WHERE "
+    query = "SELECT $colString FROM crsp.$stock_file WHERE "
 
     if pull_method == :optimize
         df[!, :date_val] = Float64.(Dates.value.(df[:, date_start]))
@@ -308,18 +360,28 @@ function crspData(
         query *= join(main_and_statement.(df.permno, df[:, date_start], df[:, date_end]), " OR ")
     end
 
-    crsp = exe(dsn, query) |> DataFrame
-
-    crsp[!, :date] = Dates.Date.(crsp[:, :date]);
+    crsp = LibPQ.execute(dsn, query) |> DataFrame
 
     return crsp
 end
 
-function crspData(
-    dsn,
+"""
+    function crsp_data(
+        dsn::LibPQ.Connection,
+        s::Date,
+        e::Date;
+        stock_file = "dsf",
+        columns = ["ret", "vol", "shrout"]
+    )
+
+Downloads all crsp stock data between the start and end date. `stock_file` must be
+"dsf" or "msf" for daily or monthly returns.
+"""
+function crsp_data(
+    dsn::LibPQ.Connection,
     s::Date,
     e::Date;
-    stockFile = "dsf",
+    stock_file = "dsf",
     columns = ["ret", "vol", "shrout"]
 )
     for col in ["permno", "date"]
@@ -327,22 +389,14 @@ function crspData(
             push!(columns, col)
         end
     end
-    colString = ""
-    for col in columns
-        if colString == ""
-            colString = col
-        else
-            colString = colString * ", " * col
-        end
-    end
+    colString = join(columns, ", ")
+
 
     query = """
         select $colString
-        from crsp.$stockFile
+        from crsp.$stock_file
         where date between '$(s)' and '$(e)'
     """
     crsp = LibPQ.execute(dsn, query) |> DataFrame
-    crsp[!, :date] = Dates.Date.(crsp[:, :date]);
-
     return crsp
 end

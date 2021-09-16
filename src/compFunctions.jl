@@ -21,11 +21,15 @@ end
 
 
 
-function getCompData(dsn,
+function comp_data(
+    dsn::LibPQ.Connection,
     df::DataFrame;
     fund::String="funda",
     filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict("datafmt" => "STD", "indfmt" => "INDL", "consol" => "C", "popsrc" => "D"),
-    columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"])
+    columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"],
+    date_start::String="dateStart",
+    date_end::String="dateEnd"
+)
 
     for col in ["gvkey", "dateStart", "dateEnd"]
         if col ∉ names(df)
@@ -34,33 +38,34 @@ function getCompData(dsn,
         end
     end
 
-
-
-    colString = createColString(columns)
+    colString = join(columns, ", ")
     filterString = createFilter(filters)
+    gvkey_str = "('" * join(df[:, :gvkey], "', '") * "')"
+    date_start = minimum(df[:, date_start])
+    date_end = maximum(df[:, date_end])
+    query = """
+        SELECT $colString FROM compa.$fund
+        WHERE datadate BETWEEN '$(date_start)' and '$(date_end)'
+        AND gvkey IN $gvkey_str $filterString
+        """
 
-    query = String[]
-    for i in 1:size(df, 1)
-        temp_query = """
-                        (select $colString
-                        from compa.$fund
-                        where datadate between '$(df[i, :dateStart])' and '$(df[i, :dateEnd])' and gvkey = '$(df[i, :gvkey])' $filterString)
-                        """
-        push!(query, temp_query)
-    end
 
-    comp = LibPQ.execute(dsn, join(query, " UNION ")) |> DataFrame;
-    comp[!, :datadate] = Dates.Date.(comp[:, :datadate]);
-
-    return comp
+    return LibPQ.execute(dsn, query) |> DataFrame
 end
 
-function getCompData(dsn,
-        dateStart::Union{Date,Int}=1950,
-        dateEnd::Union{Date,Int}=Dates.today();
-        fund::String="funda",
-        filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict("datafmt" => "STD", "indfmt" => "INDL", "consol" => "C", "popsrc" => "D"),
-        columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"])
+function comp_data(
+    dsn::LibPQ.Connection,
+    dateStart::Union{Date,Int}=1950,
+    dateEnd::Union{Date,Int}=Dates.today();
+    fund::String="funda",
+    filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
+        "datafmt" => "STD",
+        "indfmt" => "INDL",
+        "consol" => "C",
+        "popsrc" => "D"
+    ),
+    columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"]
+)
     
     if typeof(dateStart) == Int
         dateStart = Dates.Date(dateStart, 1, 1)
@@ -69,15 +74,13 @@ function getCompData(dsn,
         dateEnd = Dates.Date(dateEnd, 12, 31)
     end
 
-    colString = createColString(columns)
+    colString = join(columns, ", ")
     filterString = createFilter(filters)
     query = """
         select $colString
         from compa.$fund
-        where datadate between '$dateStart' and '$dateEnd' $filterString"""
+        where datadate between '$dateStart' and '$dateEnd' $filterString
+    """
     
-    comp = LibPQ.execute(dsn, query) |> DataFrame;
-    comp[!, :datadate] = Dates.Date.(comp[:, :datadate])
-
-    return comp
+    return LibPQ.execute(dsn, query) |> DataFrame
 end

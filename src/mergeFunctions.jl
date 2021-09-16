@@ -1,80 +1,55 @@
-function compustatCrspLink(dsn;
-    gvkey::Array{String} = String[],
-    lpermno::Array{<:Number} = Int[],
-    cols::Array{String} = ["gvkey", "lpermno", "linkdt", "linkenddt"])
-
-    if sum(length.([gvkey, lpermno]) .> 0) > 1 # Tests if any array has data, sums to test if multiple have data
-        @error("Only one of the identifying columns can have values in it")
-        throw("Please retry where either gvkey or lpermno have data")
-        return 0
-    end
-
-    dfLink = DataFrame()
-
-    colString = ""
-    for col in cols
-        if colString == ""
-            colString = col
-        else
-            colString = colString * ", " * col
-        end
-    end
-
-    query = ""
-    if sum(length.([gvkey, lpermno]) .> 0) == 0 # If no restrictions, get all data
-        query = """
-                            select distinct $colString
-                            from crsp_a_ccm.ccmxpf_lnkhist
-                            where lpermno IS NOT NULL AND
-                            linktype in ('LU', 'LC') AND
-                            linkprim in ('P', 'C')       
-                            """
-    elseif length(gvkey) > 100 || length(lpermno) > 100 # If a lot of data, get all of it
-        query = """
-                select distinct $colString
-                from crsp_a_ccm.ccmxpf_lnkhist
-                where lpermno IS NOT NULL AND
-                linktype in ('LU', 'LC') AND
-                linkprim in ('P', 'C')
-                """
-        
-    else
-        if length(gvkey) > 0
-            queryL = String[]
-            for x in gvkey
-                temp_query = """
-                                (select $colString
-                                from crsp_a_ccm.ccmxpf_lnkhist
-                                where lpermno IS NOT NULL and gvkey = '$x' AND
-                                linktype in ('LU', 'LC') AND
-                                linkprim in ('P', 'C'))
-                                """
-                push!(queryL, temp_query)
-            end
-            query = join(queryL, " UNION ")
-        else
-            queryL = String[]
-            for x in lpermno
-                temp_query = """
-                                (select $colString
-                                from crsp_a_ccm.ccmxpf_lnkhist
-                                where lpermno IS NOT NULL and lpermno = $x AND
-                                linktype in ('LU', 'LC') AND
-                                linkprim in ('P', 'C'))
-                                """
-                push!(queryL, temp_query)
-            end
-            query = join(queryL, " UNION ")
-        end
-    end
-
+function compustatCrspLink(
+    dsn;
+    cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"]
+)
+    col_str = join(cols, ", ")
+    query = """
+        select distinct $colString
+        from crsp_a_ccm.ccmxpf_lnkhist
+        where lpermno IS NOT NULL AND
+        linktype in ('LU', 'LC') AND
+        linkprim in ('P', 'C')       
+    """
     dfLink = LibPQ.execute(dsn, query) |> DataFrame;
-    if "linkdt" in cols
-        dfLink[!, :linkdt] = Dates.Date.(dfLink[:, :linkdt])
-    end
     if "linkenddt" in cols
         dfLink[!, :linkenddt] = coalesce.(dfLink[:, :linkenddt], Dates.today())
-        dfLink[!, :linkenddt] = Dates.Date.(dfLink[:, :linkenddt]);
+    end
+    if "lpermno" in cols
+        rename!(dfLink, :lpermno => :permno)
+    end
+    return dfLink
+end
+
+
+function compustatCrspLink(
+    dsn,
+    vals;
+    id_col::Stirng="gvkey", # either "gvkey" or "lpermno"
+    cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"]
+)
+    if length(vals) == 0 || length(vals) > 1000
+        return compustatCrspLink(dsn; cols)
+    end
+    if id_col == "permno"
+        id_col = "lpermno"
+    end
+    col_str = join(cols, ", ")
+    fil = if id_col == "gvkey"
+        "('" * join(vals, "', '") * "')"
+    else
+        "(" * join(vals, ", ") * ")"
+    end
+    query = """
+        select distinct $colString
+        from crsp_a_ccm.ccmxpf_lnkhist
+        where lpermno IS NOT NULL AND
+        linktype in ('LU', 'LC') AND
+        linkprim in ('P', 'C') AND
+        $id_col IN $fil
+    """
+    dfLink = LibPQ.execute(dsn, query) |> DataFrame;
+    if "linkenddt" in cols
+        dfLink[!, :linkenddt] = coalesce.(dfLink[:, :linkenddt], Dates.today())
     end
     if "lpermno" in cols
         rename!(dfLink, :lpermno => :permno)
@@ -83,68 +58,55 @@ function compustatCrspLink(dsn;
 end
 
 function cik_to_gvkey(
-    dsn;
-    cik::Array{String}=String[],
-    gvkey::Array{String}=String[],
+    dsn::LibPQ.Connection;
     cols::Array{String}=["gvkey", "cik"]
 )
-    if sum(length.([gvkey, cik]) .> 0) > 1 # Tests if any array has data, sums to test if multiple have data
-        @error("Only one of the identifying columns can have values in it")
-        throw("Please retry where either gvkey or cik have data")
-    end
-    colString = ""
-    for col in cols
-        if colString == ""
-            colString = col
-        else
-            colString = colString * ", " * col
-        end
-    end
-    if (sum(length.([gvkey, cik]) .> 0) == 0) || (length(gvkey) > 100 || length(cik) > 100)
-        query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL"
-    else
-        if length(gvkey) > 0
-            queryL = String[]
-            for x in gvkey
-                temp_query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL AND gvkey = $x"
-                push!(queryL, temp_query)
-            end
-            query = join(queryL, " UNION ")
-        else
-            queryL = String[]
-            for x in cik
-                temp_query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL AND cik = $x"
-                push!(queryL, temp_query)
-            end
-            query = join(queryL, " UNION ")
-        end
+    colString = join(cols, ", ")
+    query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL"
+    return LibPQ.execute(dsn, query) |> DataFrame
+end
+
+function cik_to_gvkey(
+    dsn,
+    vals::Array{String};
+    id_col::String="cik", # either "cik" or "gvkey"
+    cols::Array{String}=["gvkey", "cik"]
+)
+    if length(vals) == 0 || length(vals) > 1000
+        return cik_to_gvkey(dsn; cols)
     end
 
-    dfLink = LibPQ.execute(dsn, query) |> DataFrame
-    return dfLink
+    colString = join(cols, ", ")
+    fil_str = join(unique(vals), "', '")
+    query = """
+        SELECT DISTINCT $colString
+        FROM comp.company
+        WHERE cik IS NOT NULL
+        AND $id_col IN ('$(fil_str)')
+    """
+    return LibPQ.execute(dsn, query) |> DataFrame
 end
 
 function join_permno_gvkey(
     dsn,
     df::DataFrame;
+    id_col::String="gvkey",
     forceUnique::Bool=false,
-    col1::String="gvkey",
-    col2::String="gvkey",
     datecol::String="date"
 )
-    if col2 == "gvkey"
-        comp = unique(compustatCrspLink(dsn, gvkey=df[:, col1]))
-    else
-        comp = unique(compustatCrspLink(dsn, lpermno=df[:, col1]))
-    end
-    comp[!, :linkdt] = coalesce.(comp[:, :linkdt], minimum(df[:, datecol]) - Dates.Day(1))
-    comp[!, :linkenddt] = coalesce.(comp[:, :linkenddt], Dates.today())
+    comp = unique(compustatCrspLink(dsn, df[:, id_col]; id_col))
+
+    comp[!, :linkdt] = coalesce.(comp[:, :linkdt], minimum(df[:, datecol]))
+
     try
         df = range_join(
             df,
             comp,
-            [col1 => col2],
-            [(>, Symbol(datecol), :linkdt), (<=, Symbol(datecol), :linkenddt)],
+            [id_col],
+            [
+                (>=, Symbol(datecol), :linkdt),
+                (<=, Symbol(datecol), :linkenddt)
+            ],
             validate=(false, true)
         )
     catch
@@ -161,7 +123,7 @@ function join_permno_gvkey(
                     end
                 end
             end
-            validate=(true, false)
+            validate=(false, true)
         else
             validate=(false, false)
             @warn "There are multiple PERMNOs per GVKEY, be careful on merging with other datasets"
@@ -170,8 +132,11 @@ function join_permno_gvkey(
         df = range_join(
             df,
             comp,
-            [col1 => col2],
-            [(>, Symbol(datecol), :linkdt), (<=, Symbol(datecol), :linkenddt)];
+            [id_col],
+            [
+                (>=, Symbol(datecol), :linkdt),
+                (<=, Symbol(datecol), :linkenddt)
+            ];
             validate
         )
     end
@@ -180,8 +145,8 @@ function join_permno_gvkey(
 end
 
 
-function addIdentifiers(
-    dsn,
+function link_identifiers(
+    dsn::LibPQ.Connection,
     df::DataFrame;
     cik::Bool=false,
     ncusip::Bool=false,
@@ -196,7 +161,7 @@ function addIdentifiers(
     permno_name::String="permno",
     ncusip_name::String="ncusip",
 )
-    df = df[:, :]
+    df = copy(df)
     if datecol ∉ names(df)
         throw("DataFrame must include a date column")
     end
@@ -207,9 +172,6 @@ function addIdentifiers(
     if col_count > 1
         @warn("Function has a preset order on which key will be used first, it is optimal to start with one key")
     end
-    if cik_name in names(df)
-        @warn("Observations with a CIK that does not have a matching GVKEY will be dropped")
-    end
     if ncusip_name in names(df) && any(length.(df[:, ncusip_name]) .> 8)
         throw("Cusip or NCusip value must be of length 8 to match CRSP values")
     end
@@ -217,101 +179,222 @@ function addIdentifiers(
         throw("Cusip or NCusip value must be of length 8 to match CRSP values")
     end
 
+    # Go through a series of checks, makes sure original identifying col is
+    # in the output, there are no missing identifiers, and converts those
+    # that can be strings or numbers (CIK and GVKEY) into the appropriate
+    # format. I also rename all columns to make my life easier later
     if cik_name in names(df)
         cik = true
-        identifying_col=cik_name
+        identifying_col="cik"
+        rename!(df, cik_name => "cik")
         identifier_was_int=false
-        if typeof(df[:, cik_name]) <: Array{<:Real}
-            dropmissing!(df, cik_name)
-            df[!, cik_name] = lpad.(df[:, cik_name], 10, "0")
+        if typeof(df[:, "cik"]) <: Array{<:Real}
+            dropmissing!(df, "cik")
+            df[!, "cik"] = lpad.(df[:, "cik"], 10, "0")
             identifier_was_int=true
         end
     end
     if ncusip_name in names(df)
         ncusip = true
-        identifying_col=ncusip_name
+        identifying_col="ncusip"
+        rename!(df, ncusip_name => "ncusip")
         identifier_was_int=false
-        dropmissing!(df, ncusip_name)
+        dropmissing!(df, "ncusip")
     end
     if cusip_name in names(df)
         cusip = true
-        identifying_col=cusip_name
+        identifying_col="cusip"
+        rename!(df, cusip_name => "cusip")
         identifier_was_int=false
-        dropmissing!(df, cusip_name)
+        dropmissing!(df, "cusip")
     end
     if gvkey_name in names(df)
         gvkey = true
-        identifying_col=gvkey_name
+        identifying_col="gvkey"
+        rename!(df, gvkey_name => "gvkey")
         identifier_was_int=false
-        dropmissing!(df, gvkey_name)
-        if typeof(df[:, gvkey_name]) <: Array{<:Real}
-            df[!, gvkey_name] = lpad.(df[:, gvkey_name], 6, "0")
+        dropmissing!(df, "gvkey")
+        if typeof(df[:, "gvkey"]) <: Array{<:Real}
+            df[!, "gvkey"] = lpad.(df[:, "gvkey"], 6, "0")
             identifier_was_int=true
         end
     end
     if permno_name in names(df)
         permno = true
-        identifying_col=permno_name
+        identifying_col="permno"
+        rename!(df, permno_name => "permno")
         identifier_was_int=true
-        dropmissing!(df, permno_name)
+        dropmissing!(df, "permno")
     end
 
     
 
-    if cik_name in names(df)
-        ciks = cik_to_gvkey(dsn, cik=unique(df[:, cik_name]))
-        df = innerjoin(
-            df,
-            ciks,
-            on=[cik_name => "cik"],
-            validate=(false, true)
-        )
-        dropmissing!(df, "gvkey")
-    end
-
-
-    if gvkey_name in names(df) # If gvkey exists and no other identifier does, permno must be fetched
-        if permno_name ∉ names(df) && cusip_name ∉ names(df) && ncusip_name ∉ names(df)
-            df = join_permno_gvkey(dsn, df; forceUnique, col1="gvkey", datecol)
-        end
-    end
-
-    if ncusip_name in names(df) || cusip_name in names(df)
-        if permno_name ∉ names(df) # to fetch either cusip, ncusip, or gvkey, permno is either necessary or trivial
-            if cusip_name in names(df)
-                df = getCrspNames(dsn, df, cusip_name, [:ncusip], datecol=datecol, identifying_col="cusip")
-            else
-                df = getCrspNames(dsn, df, ncusip_name, [:cusip], datecol=datecol, identifying_col="ncusip")
-            end
-            dropmissing!(df, [permno_name, cusip_name, ncusip_name])
-        end
-    end
-                
-    if permno_name in names(df)
-        if (ncusip && ncusip_name ∉ names(df)) || (cusip && cusip_name ∉ names(df))
-            df = getCrspNames(dsn, df, permno_name, [:ncusip, :cusip], datecol=datecol)
-        end
-        if (gvkey && gvkey_name ∉ names(df)) || (cik && cik_name ∉ names(df) && gvkey_name ∉ names(df))
-            df = join_permno_gvkey(dsn, df; forceUnique, col1=permno_name, col2="permno", datecol)
-        end
-    end
-
-    if cik && cik_name ∉ names(df)
-        temp = unique(dropmissing(df[:, [gvkey_name]]))
-        ciks = cik_to_gvkey(dsn, cik=temp[:, gvkey_name])
-        dropmissing!(ciks)
+    # cik is only easy to link to gvkey, so that must come first
+    if identifying_col == "cik"
+        ciks = cik_to_gvkey(dsn, unique(df[:, "cik"]); id_col="cik")
         df = leftjoin(
             df,
             ciks,
-            on=[gvkey_name => gvkey_name],
+            on=["cik"],
+            validate=(false, true)
+        )
+        if any([permno, cusip, ncusip])
+            gvkey = link_identifiers(
+                dsn,
+                df[:, ["gvkey", datecol]] |> dropmissing |> unique;
+                permno,
+                cusip,
+                ncusip,
+                datecol
+            )
+            df = leftjoin(
+                df,
+                gvkey,
+                on=["gvkey", datecol],
+                validate=(false, true),
+                matchmissing=:equal
+            )
+    end
+
+    # If gvkey, need to get the link to permno
+    if identifying_col == "gvkey" && any([permno, cusip, ncusip])
+        permno_gvkey = join_permno_gvkey(
+            dsn,
+            df;
+            forceUnique,
+            id_col="gvkey",
+            datecol
+        )
+        crsp = link_identifiers(
+            dsn,
+            dropmissing(permno_gvkey[:, ["permno", datecol]]) |> unique;
+            permno,
+            ncusip,
+            cusip,
+            datecol
+        )
+        df = leftjoin(
+            df,
+            crsp,
+            on=["permno", datecol],
             validate=(false, true),
             matchmissing=:equal
         )
     end
 
-    for pair in [(ncusip, ncusip_name), (cusip, cusip_name), (gvkey, gvkey_name), (permno, permno_name), (cik, cik_name)]
-        if !pair[1] && pair[2] in names(df)
-            select!(df, Not(pair[2]))
+    # If gvkey and need cik
+    if identifying_col == "gvkey" && cik
+        temp = dropmissing(df[:, ["gvkey"]])
+        ciks = cik_to_gvkey(dsn, temp[:, "gvkey"]; id_col="gvkey")
+        dropmissing!(ciks)
+        df = leftjoin(
+            df,
+            ciks,
+            on=["gvkey"],
+            validate=(false, true),
+            matchmissing=:equal
+        )
+    end
+
+    # if ncusip or cusip, first need the permno set (which is trivial)
+    # if still need gvkey or cik then permno is necessary
+    if identifying_col ∈ ["ncusip", "cusip"]
+        crsp = crsp_stocknames(
+            dsn,
+            df[:, identifying_col];
+            cusip_col=identifying_col,
+            warn_on_long=false
+        )
+        crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
+        crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
+        df = range_join(
+            df,
+            crsp,
+            [identifying_col],
+            [
+                (<=, Symbol(datecol), :nameenddt),
+                (>=, Symbol(datecol), :namedt)
+            ],
+            validate=(false, true)
+        )
+        if gvkey || cik
+            temp = link_identifiers(
+                dsn,
+                dropmissing(df[:, ["permno", datecol]]) |> unique;
+                cik,
+                gvkey,
+                datecol
+            )
+            df = leftjoin(
+                df,
+                temp,
+                on=["permno", datecol],
+                validate=(false, true),
+                matchmissing=:equal
+            )
+        end
+    end
+
+    if identifying_col == "permno"
+        if ncusip || cusip
+            crsp = crsp_stocknames(
+                dsn,
+                df[:, identifying_col];
+                warn_on_long=false
+            )
+            crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
+            crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
+            df = range_join(
+                df,
+                crsp,
+                [identifying_col],
+                [
+                    (<=, Symbol(datecol), :nameenddt),
+                    (>=, Symbol(datecol), :namedt)
+                ],
+                validate=(false, true)
+            )
+        end
+        if gvkey || cik
+            df = join_permno_gvkey(
+                dsn,
+                df;
+                forceUnique,
+                id_col="permno",
+                datecol
+            )
+            if cik
+                gvkey = link_identifiers(
+                    dsn,
+                    df[:, ["gvkey", datecol]] |> dropmissing |> unique;
+                    datecol,
+                    cik
+                )
+                df = leftjoin(
+                    df,
+                    gvkey,
+                    on=["gvkey", datecol],
+                    validate=(false, true),
+                    matchmissing=:equal
+                )
+            end
+        end
+    end
+
+    clean_up = [
+        (ncusip, "ncusip", ncusip_name),
+        (cusip, "cusip", cusip_name),
+        (gvkey, "gvkey", gvkey_name),
+        (permno, "permno", permno_name),
+        (cik, "cik", cik_name)
+    ]
+
+    for (to_include, cur_name, new_name) in clean_up
+        if !to_include && cur_name ∈ names(df)
+            select!(df, Not(cur_name))
+        end
+        if cur_name ∈ names(df) && cur_name != new_name
+            rename!(df, cur_name => new_name)
         end
     end
 

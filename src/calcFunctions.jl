@@ -82,7 +82,7 @@ end
 function calculate_car(
     df::AbstractDataFrame,
     timeframe::retTimeframe,
-    data::LibPQ.Connection;
+    dsn::LibPQ.Connection;
     date::String="date",
     idcol::String="permno"
 )
@@ -98,18 +98,20 @@ function calculate_car(
         stockFile2 = "dsi"
     end
 
-    crsp = crspData(data, df, stockFile = stockFile1)
-    crspM = crspWholeMarket(data,
+    crsp = crsp_data(dsn, df, stockFile = stockFile1)
+    crspM = crsp_market(
+        dsn,
         stockFile = stockFile2,
         dateStart = minimum(df[:, :dateStart]),
         dateEnd = maximum(df[:, :dateEnd]),
-        col = timeframe.marketReturn)
+        col = timeframe.marketReturn
+    )
     return calculate_car(df, timeframe, crsp, crspM; date=date, idcol=idcol)
 end
 
 function calculate_car(
     df::AbstractDataFrame,
-    data::LibPQ.Connection;
+    dsn::LibPQ.Connection;
     date_start::String="dateStart",
     date_end::String="dateEnd",
     idcol::String="permno",
@@ -126,12 +128,14 @@ function calculate_car(
         stockFile2 = "dsi"
     end
 
-    crsp = crspData(data, df; stockFile = stockFile1, date_start, date_end)
-    crspM = crspWholeMarket(data,
+    crsp = crsp_data(dsn, df; stockFile = stockFile1, date_start, date_end)
+    crspM = crsp_market(
+        dsn,
         stockFile = stockFile2,
         dateStart = minimum(df[:, date_start]),
         dateEnd = maximum(df[:, date_end]),
-        col = marketReturn)
+        col = marketReturn
+    )
     return calculate_car(df, crsp, crspM; date_start, date_end, idcol)
 end
 
@@ -165,7 +169,7 @@ end
 function calculate_car(
     df::AbstractDataFrame,
     timeframe::Array{retTimeframe},
-    data::LibPQ.Connection;
+    dsn::LibPQ.Connection;
     date::String="date",
     idcol::String="permno"
 )
@@ -192,15 +196,15 @@ function calculate_car(
     gdf = groupby(df_temp, [idcol, date])
     df_temp = combine(gdf, "dateStart" => minimum => "dateStart", "dateEnd" => maximum => "dateEnd")
 
-    crsp = crspData(data, df_temp, stockFile = stockFile1)
-    println(first(crsp, 30))
-    crspM = crspWholeMarket(data,
+    crsp = crsp_data(dsn, df_temp, stockFile = stockFile1)
+
+    crspM = crsp_market(
+        dsn,
         stockFile = stockFile2,
         dateStart = minimum(df_temp[:, :dateStart]),
         dateEnd = maximum(df_temp[:, :dateEnd]),
         col = unique(market_ret)
     )
-    println(first(crspM, 30))
 
     return calculate_car(df, timeframe, crsp, crspM; date=date, idcol=idcol)
 
