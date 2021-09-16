@@ -4,7 +4,7 @@ function compustatCrspLink(
 )
     col_str = join(cols, ", ")
     query = """
-        select distinct $colString
+        select distinct $col_str
         from crsp_a_ccm.ccmxpf_lnkhist
         where lpermno IS NOT NULL AND
         linktype in ('LU', 'LC') AND
@@ -24,7 +24,7 @@ end
 function compustatCrspLink(
     dsn,
     vals;
-    id_col::Stirng="gvkey", # either "gvkey" or "lpermno"
+    id_col::String="gvkey", # either "gvkey" or "lpermno"
     cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"]
 )
     if length(vals) == 0 || length(vals) > 1000
@@ -40,7 +40,7 @@ function compustatCrspLink(
         "(" * join(vals, ", ") * ")"
     end
     query = """
-        select distinct $colString
+        select distinct $col_str
         from crsp_a_ccm.ccmxpf_lnkhist
         where lpermno IS NOT NULL AND
         linktype in ('LU', 'LC') AND
@@ -227,19 +227,18 @@ function link_identifiers(
         dropmissing!(df, "permno")
     end
 
-    
 
     # cik is only easy to link to gvkey, so that must come first
     if identifying_col == "cik"
-        ciks = cik_to_gvkey(dsn, unique(df[:, "cik"]); id_col="cik")
+        cik_gvkey = cik_to_gvkey(dsn, unique(df[:, "cik"]); id_col="cik")
         df = leftjoin(
             df,
-            ciks,
+            cik_gvkey,
             on=["cik"],
             validate=(false, true)
         )
         if any([permno, cusip, ncusip])
-            gvkey = link_identifiers(
+            comp = link_identifiers(
                 dsn,
                 df[:, ["gvkey", datecol]] |> dropmissing |> unique;
                 permno,
@@ -249,11 +248,12 @@ function link_identifiers(
             )
             df = leftjoin(
                 df,
-                gvkey,
+                comp,
                 on=["gvkey", datecol],
                 validate=(false, true),
                 matchmissing=:equal
             )
+        end
     end
 
     # If gvkey, need to get the link to permno
@@ -265,31 +265,38 @@ function link_identifiers(
             id_col="gvkey",
             datecol
         )
-        crsp = link_identifiers(
-            dsn,
-            dropmissing(permno_gvkey[:, ["permno", datecol]]) |> unique;
-            permno,
-            ncusip,
-            cusip,
-            datecol
-        )
         df = leftjoin(
             df,
-            crsp,
-            on=["permno", datecol],
-            validate=(false, true),
-            matchmissing=:equal
+            permno_gvkey,
+            on=["gvkey", datecol],
+            validate=(false, true)
         )
+        if any([cusip, ncusip])
+            crsp = link_identifiers(
+                dsn,
+                dropmissing(permno_gvkey[:, ["permno", datecol]]) |> unique;
+                ncusip,
+                cusip,
+                datecol
+            )
+            df = leftjoin(
+                df,
+                crsp,
+                on=["permno", datecol],
+                validate=(false, true),
+                matchmissing=:equal
+            )
+        end
     end
 
     # If gvkey and need cik
     if identifying_col == "gvkey" && cik
         temp = dropmissing(df[:, ["gvkey"]])
-        ciks = cik_to_gvkey(dsn, temp[:, "gvkey"]; id_col="gvkey")
-        dropmissing!(ciks)
+        cik_gvkey = cik_to_gvkey(dsn, temp[:, "gvkey"]; id_col="gvkey")
+        dropmissing!(cik_gvkey)
         df = leftjoin(
             df,
-            ciks,
+            cik_gvkey,
             on=["gvkey"],
             validate=(false, true),
             matchmissing=:equal
@@ -317,8 +324,9 @@ function link_identifiers(
             ],
             validate=(false, true)
         )
+        select!(df, Not([:namedt, :nameenddt]))
         if gvkey || cik
-            temp = link_identifiers(
+            crsp = link_identifiers(
                 dsn,
                 dropmissing(df[:, ["permno", datecol]]) |> unique;
                 cik,
@@ -327,7 +335,7 @@ function link_identifiers(
             )
             df = leftjoin(
                 df,
-                temp,
+                crsp,
                 on=["permno", datecol],
                 validate=(false, true),
                 matchmissing=:equal
@@ -354,6 +362,7 @@ function link_identifiers(
                 ],
                 validate=(false, true)
             )
+            select!(df, Not([:namedt, :nameenddt]))
         end
         if gvkey || cik
             df = join_permno_gvkey(
@@ -364,7 +373,7 @@ function link_identifiers(
                 datecol
             )
             if cik
-                gvkey = link_identifiers(
+                comp = link_identifiers(
                     dsn,
                     df[:, ["gvkey", datecol]] |> dropmissing |> unique;
                     datecol,
@@ -372,7 +381,7 @@ function link_identifiers(
                 )
                 df = leftjoin(
                     df,
-                    gvkey,
+                    comp,
                     on=["gvkey", datecol],
                     validate=(false, true),
                     matchmissing=:equal
