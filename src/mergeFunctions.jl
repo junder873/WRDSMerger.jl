@@ -305,26 +305,28 @@ function link_identifiers(
 
     # if ncusip or cusip, first need the permno set (which is trivial)
     # if still need gvkey or cik then permno is necessary
-    if identifying_col ∈ ["ncusip", "cusip"]
-        crsp = crsp_stocknames(
-            dsn,
-            df[:, identifying_col];
-            cusip_col=identifying_col,
-            warn_on_long=false
-        )
-        crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
-        crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
-        df = range_join(
-            df,
-            crsp,
-            [identifying_col],
-            [
-                (<=, Symbol(datecol), :nameenddt),
-                (>=, Symbol(datecol), :namedt)
-            ],
-            validate=(false, true)
-        )
-        select!(df, Not([:namedt, :nameenddt]))
+    if identifying_col ∈ ["ncusip", "cusip", "permno"]
+        if (identifying_col == "permno" && (ncusip || cusip)) || identifying_col != "permno"
+            crsp = crsp_stocknames(
+                dsn,
+                df[:, identifying_col];
+                cusip_col=identifying_col,
+                warn_on_long=false
+            )
+            crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
+            crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
+            df = range_join(
+                df,
+                crsp,
+                [identifying_col],
+                [
+                    (<=, Symbol(datecol), :nameenddt),
+                    (>=, Symbol(datecol), :namedt)
+                ],
+                validate=(false, true)
+            )
+            select!(df, Not([:namedt, :nameenddt]))
+        end
         if gvkey || cik
             crsp = link_identifiers(
                 dsn,
@@ -343,50 +345,37 @@ function link_identifiers(
         end
     end
 
-    if identifying_col == "permno"
-        if ncusip || cusip
-            crsp = crsp_stocknames(
+    # Since the case of permno and needing only ncusip or cusip was dealth with
+    # in the previous if statement, this one gets called if I have permno and
+    # need gvkey or cik
+    if identifying_col == "permno" && (gvkey || cik)
+        gvkey_permno = join_permno_gvkey(
+            dsn,
+            df;
+            forceUnique,
+            id_col="permno",
+            datecol
+        )
+        df = leftjoin(
+            df,
+            gvkey_permno,
+            on=["permno", datecol],
+            validate=(false, true)
+        )
+        if cik
+            comp = link_identifiers(
                 dsn,
-                df[:, identifying_col];
-                warn_on_long=false
+                df[:, ["gvkey", datecol]] |> dropmissing |> unique;
+                datecol,
+                cik
             )
-            crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
-            crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
-            df = range_join(
+            df = leftjoin(
                 df,
-                crsp,
-                [identifying_col],
-                [
-                    (<=, Symbol(datecol), :nameenddt),
-                    (>=, Symbol(datecol), :namedt)
-                ],
-                validate=(false, true)
+                comp,
+                on=["gvkey", datecol],
+                validate=(false, true),
+                matchmissing=:equal
             )
-            select!(df, Not([:namedt, :nameenddt]))
-        end
-        if gvkey || cik
-            df = join_permno_gvkey(
-                dsn,
-                df;
-                forceUnique,
-                id_col="permno",
-                datecol
-            )
-            if cik
-                comp = link_identifiers(
-                    dsn,
-                    df[:, ["gvkey", datecol]] |> dropmissing |> unique;
-                    datecol,
-                    cik
-                )
-                df = leftjoin(
-                    df,
-                    comp,
-                    on=["gvkey", datecol],
-                    validate=(false, true),
-                    matchmissing=:equal
-                )
-            end
         end
     end
 
