@@ -6,7 +6,7 @@ function calculate_car(
     date_start::String="dateStart",
     date_end::String="dateEnd",
     idcol::String="permno",
-    marketReturn::String="vwretd",
+    market_return::String="vwretd",
     out_cols=[
         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
         ["car"] .=> std
@@ -22,11 +22,11 @@ function calculate_car(
     crspM = market_data
 
     crsp = leftjoin(crsp, crspM, on=:date)
-    crsp[!, :car] = crsp[:, :ret] .- crsp[:, marketReturn]
+    crsp[!, :car] = crsp[:, :ret] .- crsp[:, market_return]
     crsp[!, :plus1] = crsp[:, :ret] .+ 1
-    crsp[!, :plus1m] = crsp[:, marketReturn] .+ 1
+    crsp[!, :plus1m] = crsp[:, market_return] .+ 1
     rename!(crsp, :date => :retDate)
-    rename!(crsp, marketReturn => "retm")
+    rename!(crsp, market_return => "retm")
 
     df = range_join(
         df,
@@ -57,7 +57,7 @@ end
 
 function calculate_car(
     df::AbstractDataFrame,
-    timeframe::retTimeframe,
+    ret_period::Tuple{DatePeriod, DatePeriod},
     data::AbstractDataFrame,
     market_data::AbstractDataFrame;
     date::String="date",
@@ -65,7 +65,8 @@ function calculate_car(
     out_cols=[
         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
         ["car"] .=> std
-    ]
+    ],
+    market_return::String="vwretd"
 )
     if date ∉ names(df)
         throw(ArgumentError("The $date column is not found in the dataframe"))
@@ -73,24 +74,26 @@ function calculate_car(
     if idcol ∉ names(df)
         throw(ArgumentError("The $idcol column is not found in the dataframe"))
     end
-    df[!, :dateStart] = calculateDays(df[:, date], timeframe.businessDays[1], timeframe.subtraction, timeframe.monthPeriod)
-    df[!, :dateEnd] = calculateDays(df[:, date], timeframe.businessDays[2], timeframe.addition, timeframe.monthPeriod)
+    df[!, :dateStart] = df[:, date] + ret_period[1]
+    df[!, :dateEnd] = df[:, date] + ret_period[2]
 
     return calculate_car(df, data, market_data; idcol, out_cols)
 end
 
 function calculate_car(
+    dsn::LibPQ.Connection,
     df::AbstractDataFrame,
-    timeframe::retTimeframe,
-    dsn::LibPQ.Connection;
+    ret_period::Tuple{DatePeriod, DatePeriod};
     date::String="date",
-    idcol::String="permno"
+    idcol::String="permno",
+    stock_file_daily::Bool=true,
+    market_return::String="vwretd"
 )
     df = copy(df)
     
-    df[!, :dateStart] = calculateDays(df[:, date], timeframe.businessDays[1], timeframe.subtraction, timeframe.monthPeriod)
-    df[!, :dateEnd] = calculateDays(df[:, date], timeframe.businessDays[2], timeframe.addition, timeframe.monthPeriod)
-    if timeframe.monthPeriod
+    df[!, :dateStart] = df[:, date] + ret_period[1]
+    df[!, :dateEnd] = df[:, date] + ret_period[2]
+    if !stock_file_daily
         stockFile1 = "msf"
         stockFile2 = "msi"
     else
@@ -104,14 +107,14 @@ function calculate_car(
         stockFile = stockFile2,
         dateStart = minimum(df[:, :dateStart]),
         dateEnd = maximum(df[:, :dateEnd]),
-        col = timeframe.marketReturn
+        col = market_return
     )
-    return calculate_car(df, timeframe, crsp, crspM; date=date, idcol=idcol)
+    return calculate_car(df, ret_start, ret_end, crsp, crspM; date=date, idcol=idcol, market_return=market_return)
 end
 
 function calculate_car(
-    df::AbstractDataFrame,
-    dsn::LibPQ.Connection;
+    dsn::LibPQ.Connection,
+    df::AbstractDataFrame;
     date_start::String="dateStart",
     date_end::String="dateEnd",
     idcol::String="permno",
@@ -143,11 +146,12 @@ end
 
 function calculate_car(
     df::AbstractDataFrame,
-    timeframe::Array{retTimeframe},
+    ret_periods::Array{Tuple{DatePeriod, DatePeriod}},
     data::AbstractDataFrame,
     market_data::AbstractDataFrame;
     date::String="date",
-    idcol::String="permno"
+    idcol::String="permno",
+    market_return::String="vwretd"
 )
 
 
@@ -155,43 +159,44 @@ function calculate_car(
 
     dfAll = DataFrame()
 
-    for x in timeframe
-        df[!, :name] .= nameConvention(x)
+    for ret_period in ret_periods
+        df[!, :name] .= repeat([ret_period], nrow(df))
         if size(dfAll, 1) == 0
-            dfAll = calculate_car(df, x, data, market_data, date=date, idcol=idcol)
+            dfAll = calculate_car(df, ret_period, data, market_data, date=date, idcol=idcol, market_return=market_return)
         else
-            dfAll = vcat(dfAll, calculate_car(df, x, data, market_data, date=date, idcol=idcol))
+            dfAll = vcat(dfAll, calculate_car(df, ret_period, data, market_data, date=date, idcol=idcol, market_return=market_return))
         end
     end
     return dfAll
 end
 
 function calculate_car(
+    dsn::LibPQ.Connection,
     df::AbstractDataFrame,
-    timeframe::Array{retTimeframe},
-    dsn::LibPQ.Connection;
+    ret_periods::Array{Tuple{DatePeriod, DatePeriod}};
     date::String="date",
-    idcol::String="permno"
+    idcol::String="permno",
+    stock_file_daily::Bool=true,
+    market_return::String="vwretd",
 )
     
     df = df[:, :]
     df_temp = DataFrame()
-    stockFile1 = "msf"
-    stockFile2 = "msi"
-    market_ret = String[]
-    for x in timeframe
-        df[!, :dateStart] = calculateDays(df[:, date], x.businessDays[1], x.subtraction, x.monthPeriod)
-        df[!, :dateEnd] = calculateDays(df[:, date], x.businessDays[2], x.addition, x.monthPeriod)
+    if !stock_file_daily
+        stockFile1 = "msf"
+        stockFile2 = "msi"
+    else
+        stockFile1 = "dsf"
+        stockFile2 = "dsi"
+    end
+    for ret_period in ret_periods
+        df[!, :dateStart] = df[:, date] + ret_period[1]
+        df[!, :dateEnd] = df[:, date] + ret_period[2]
         if nrow(df_temp) == 0
             df_temp = df[:, [idcol, date, "dateStart", "dateEnd"]]
         else
             df_temp = vcat(df_temp, df[:, [idcol, date, "dateStart", "dateEnd"]])
         end
-        if !x.monthPeriod # if any of the time periods are not monthly, download the daily file
-            stockFile1 = "dsf"
-            stockFile2 = "dsi"
-        end
-        push!(market_ret, x.marketReturn)
     end
     gdf = groupby(df_temp, [idcol, date])
     df_temp = combine(gdf, "dateStart" => minimum => "dateStart", "dateEnd" => maximum => "dateEnd")
@@ -203,10 +208,10 @@ function calculate_car(
         stockFile = stockFile2,
         dateStart = minimum(df_temp[:, :dateStart]),
         dateEnd = maximum(df_temp[:, :dateEnd]),
-        col = unique(market_ret)
+        col = market_return
     )
 
-    return calculate_car(df, timeframe, crsp, crspM; date=date, idcol=idcol)
+    return calculate_car(df, ret_periods, crsp, crspM; date=date, idcol=idcol, market_return=market_return)
 
 end
 

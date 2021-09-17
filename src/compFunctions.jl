@@ -20,32 +20,59 @@ function createFilter(filters::Union{Dict{String,String},Dict{String,Array{Strin
 end
 
 
+"""
+    function comp_data(
+        dsn::LibPQ.Connection,
+        gvkeys::AbstractArray{String},
+        dateStart::Union{Date, Int},
+        dateEnd::Union{Date, Int};
+        fund::String="funda",
+        filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
+            "datafmt" => "STD",
+            "indfmt" => "INDL",
+            "consol" => "C",
+            "popsrc" => "D"
+        ),
+        columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"],
+    )
 
+Downloads data from Compustat for a group of firms over a period. Data can be annual
+(set `fund="funda"`) or quarterly (set `fund="fundq"`). For
+quarterly data, you also likely need to change the columns
+that are downloaded (ie, sales is "saleq" in quarterly data).
+
+Filters is a dictionary of String => String pairings that will be applied to the SQL query.
+It can also accept an array of Strings.
+"""
 function comp_data(
     dsn::LibPQ.Connection,
-    df::DataFrame;
+    gvkeys::AbstractArray{String},
+    dateStart::Union{Date,Int}=1950,
+    dateEnd::Union{Date,Int}=Dates.today();
     fund::String="funda",
-    filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict("datafmt" => "STD", "indfmt" => "INDL", "consol" => "C", "popsrc" => "D"),
+    filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
+        "datafmt" => "STD",
+        "indfmt" => "INDL",
+        "consol" => "C",
+        "popsrc" => "D"
+    ),
     columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"],
-    date_start::String="dateStart",
-    date_end::String="dateEnd"
 )
-
-    for col in ["gvkey", "dateStart", "dateEnd"]
-        if col ∉ names(df)
-            println("$col must be in the DataFrame")
-            return 0
-        end
+    if typeof(dateStart) == Int
+        dateStart = Dates.Date(dateStart, 1, 1)
+    end
+    if typeof(dateEnd) == Int
+        dateEnd = Dates.Date(dateEnd, 12, 31)
     end
 
     colString = join(columns, ", ")
     filterString = createFilter(filters)
-    gvkey_str = "('" * join(df[:, :gvkey], "', '") * "')"
+    gvkey_str = "('" * join(gvkeys, "', '") * "')"
     date_start = minimum(df[:, date_start])
     date_end = maximum(df[:, date_end])
     query = """
         SELECT $colString FROM compa.$fund
-        WHERE datadate BETWEEN '$(date_start)' and '$(date_end)'
+        WHERE datadate BETWEEN '$(dateStart)' and '$(dateEnd)'
         AND gvkey IN $gvkey_str $filterString
         """
 
@@ -53,6 +80,30 @@ function comp_data(
     return LibPQ.execute(dsn, query) |> DataFrame
 end
 
+
+"""
+    function comp_data(
+        dsn::LibPQ.Connection,
+        dateStart::Union{Date,Int}=1950,
+        dateEnd::Union{Date,Int}=Dates.today();
+        fund::String="funda",
+        filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
+            "datafmt" => "STD",
+            "indfmt" => "INDL",
+            "consol" => "C",
+            "popsrc" => "D"
+        ),
+        columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"]
+    )
+
+Downloads data from Compustat for all available firms over a period. Data can be annual
+(set `fund="funda"`) or quarterly (set `fund="fundq"`). For
+quarterly data, you also likely need to change the columns
+that are downloaded (ie, sales is "saleq" in quarterly data).
+
+Filters is a dictionary of String => String pairings that will be applied to the SQL query.
+It can also accept an array of Strings.
+"""
 function comp_data(
     dsn::LibPQ.Connection,
     dateStart::Union{Date,Int}=1950,

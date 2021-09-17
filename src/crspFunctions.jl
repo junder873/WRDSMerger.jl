@@ -339,7 +339,7 @@ function crsp_data(
         end
             
         gdf = groupby(df, :cluster)
-        println("Cluster count: ", length(gdf))
+
         temp = combine(
             gdf,
             :permno => create_permno_str => :permno_str,
