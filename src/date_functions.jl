@@ -7,5 +7,3 @@ end
 
 Base.:(+)(dt::Date, z::BDay) = advancebdays(z.calendar, dt, z.value)
 Base.:(-)(dt::Date, z::BDay) = advancebdays(z.calendar, dt, -1 * z.value)
-
-    

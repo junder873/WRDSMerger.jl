@@ -33,7 +33,7 @@ end
             "consol" => "C",
             "popsrc" => "D"
         ),
-        columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"],
+        cols::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"],
     )
 
 Downloads data from Compustat for a group of firms over a period. Data can be annual
@@ -56,7 +56,7 @@ function comp_data(
         "consol" => "C",
         "popsrc" => "D"
     ),
-    columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"],
+    cols::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"],
 )
     if typeof(dateStart) == Int
         dateStart = Dates.Date(dateStart, 1, 1)
@@ -65,7 +65,7 @@ function comp_data(
         dateEnd = Dates.Date(dateEnd, 12, 31)
     end
 
-    colString = join(columns, ", ")
+    colString = join(cols, ", ")
     filterString = createFilter(filters)
     gvkey_str = "('" * join(gvkeys, "', '") * "')"
     date_start = minimum(df[:, date_start])
@@ -93,7 +93,7 @@ end
             "consol" => "C",
             "popsrc" => "D"
         ),
-        columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"]
+        cols::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"]
     )
 
 Downloads data from Compustat for all available firms over a period. Data can be annual
@@ -115,7 +115,7 @@ function comp_data(
         "consol" => "C",
         "popsrc" => "D"
     ),
-    columns::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"]
+    cols::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"]
 )
     
     if typeof(dateStart) == Int
@@ -125,7 +125,7 @@ function comp_data(
         dateEnd = Dates.Date(dateEnd, 12, 31)
     end
 
-    colString = join(columns, ", ")
+    colString = join(cols, ", ")
     filterString = createFilter(filters)
     query = """
         select $colString

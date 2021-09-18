@@ -238,7 +238,6 @@ function expressions_to_conditions(
     out = Tuple{Function, Symbol, Symbol}[]
     for x in expressions
         if x.head == :call
-            println(x.args)
             push_condition!(
                 out,
                 x.args[1],
@@ -270,7 +269,6 @@ function parse_expr(fil)
         fil = replace(fil, s => r)
     end
     fil = "($fil)"
-    println(fil)
     Meta.parse(fil)
 end
 

@@ -99,7 +99,7 @@ end
 """
     function crsp_market(
         dsn::LibPQ.Connection;
-        stockFile = "dsi",
+        stock_file = "dsi",
         dateStart = Dates.Date(1925, 1, 1),
         dateEnd = Dates.today(),
         col = "vwretd"
@@ -116,7 +116,7 @@ for each day (with various return columns). Available columns are:
 """
 function crsp_market(
     dsn::LibPQ.Connection;
-    stockFile = "dsi",
+    stock_file = "dsi",
     dateStart = Dates.Date(1925, 1, 1),
     dateEnd = Dates.today(),
     col = "vwretd"
@@ -134,7 +134,7 @@ function crsp_market(
 
     query = """
                         select $col_str
-                        from crsp.$stockFile
+                        from crsp.$stock_file
                         where date between '$dateStart' and '$dateEnd'
                         """
     crsp = LibPQ.execute(dsn, query) |> DataFrame;
@@ -257,8 +257,8 @@ end
     function crsp_data(
         dsn::LibPQ.Connection,
         df::DataFrame;
-        stockFile = "dsf",
-        columns = ["ret", "vol", "shrout"],
+        stock_file = "dsf",
+        cols = ["ret", "vol", "shrout"],
         pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
         date_start::String="dateStart",
         date_end::String="dateEnd",
@@ -288,7 +288,7 @@ function crsp_data(
     dsn::LibPQ.Connection,
     df::DataFrame;
     stock_file::String = "dsf",
-    columns = ["ret", "vol", "shrout"],
+    cols = ["ret", "vol", "shrout"],
     pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
     date_start::String="dateStart",
     date_end::String="dateEnd",
@@ -305,12 +305,12 @@ function crsp_data(
     end
 
     for col in ["permno", "date"]
-        if col ∉ columns
-            push!(columns, col)
+        if col ∉ cols
+            push!(cols, col)
         end
     end
 
-    colString = join(columns, ", ")
+    colString = join(cols, ", ")
     
     query = "SELECT $colString FROM crsp.$stock_file WHERE "
 
@@ -371,7 +371,7 @@ end
         s::Date,
         e::Date;
         stock_file = "dsf",
-        columns = ["ret", "vol", "shrout"]
+        cols = ["ret", "vol", "shrout"]
     )
 
 Downloads all crsp stock data between the start and end date. `stock_file` must be
@@ -382,14 +382,14 @@ function crsp_data(
     s::Date,
     e::Date;
     stock_file = "dsf",
-    columns = ["ret", "vol", "shrout"]
+    cols = ["ret", "vol", "shrout"]
 )
     for col in ["permno", "date"]
-        if col ∉ columns
-            push!(columns, col)
+        if col ∉ cols
+            push!(cols, col)
         end
     end
-    colString = join(columns, ", ")
+    colString = join(cols, ", ")
 
 
     query = """

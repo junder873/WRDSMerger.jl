@@ -74,8 +74,8 @@ function calculate_car(
     if idcol ∉ names(df)
         throw(ArgumentError("The $idcol column is not found in the dataframe"))
     end
-    df[!, :dateStart] = df[:, date] + ret_period[1]
-    df[!, :dateEnd] = df[:, date] + ret_period[2]
+    df[!, :dateStart] = df[:, date] .+ ret_period[1]
+    df[!, :dateEnd] = df[:, date] .+ ret_period[2]
 
     return calculate_car(df, data, market_data; idcol, out_cols)
 end
@@ -91,8 +91,8 @@ function calculate_car(
 )
     df = copy(df)
     
-    df[!, :dateStart] = df[:, date] + ret_period[1]
-    df[!, :dateEnd] = df[:, date] + ret_period[2]
+    df[!, :dateStart] = df[:, date] .+ ret_period[1]
+    df[!, :dateEnd] = df[:, date] .+ ret_period[2]
     if !stock_file_daily
         stockFile1 = "msf"
         stockFile2 = "msi"
@@ -101,15 +101,15 @@ function calculate_car(
         stockFile2 = "dsi"
     end
 
-    crsp = crsp_data(dsn, df, stockFile = stockFile1)
+    crsp = crsp_data(dsn, df, stock_file = stockFile1)
     crspM = crsp_market(
         dsn,
-        stockFile = stockFile2,
+        stock_file = stockFile2,
         dateStart = minimum(df[:, :dateStart]),
         dateEnd = maximum(df[:, :dateEnd]),
         col = market_return
     )
-    return calculate_car(df, ret_start, ret_end, crsp, crspM; date=date, idcol=idcol, market_return=market_return)
+    return calculate_car(df, ret_period, crsp, crspM; date=date, idcol=idcol, market_return=market_return)
 end
 
 function calculate_car(
@@ -131,10 +131,10 @@ function calculate_car(
         stockFile2 = "dsi"
     end
 
-    crsp = crsp_data(dsn, df; stockFile = stockFile1, date_start, date_end)
+    crsp = crsp_data(dsn, df; stock_file = stockFile1, date_start, date_end)
     crspM = crsp_market(
         dsn,
-        stockFile = stockFile2,
+        stock_file = stockFile2,
         dateStart = minimum(df[:, date_start]),
         dateEnd = maximum(df[:, date_end]),
         col = marketReturn
@@ -190,8 +190,8 @@ function calculate_car(
         stockFile2 = "dsi"
     end
     for ret_period in ret_periods
-        df[!, :dateStart] = df[:, date] + ret_period[1]
-        df[!, :dateEnd] = df[:, date] + ret_period[2]
+        df[!, :dateStart] = df[:, date] .+ ret_period[1]
+        df[!, :dateEnd] = df[:, date] .+ ret_period[2]
         if nrow(df_temp) == 0
             df_temp = df[:, [idcol, date, "dateStart", "dateEnd"]]
         else
@@ -201,11 +201,11 @@ function calculate_car(
     gdf = groupby(df_temp, [idcol, date])
     df_temp = combine(gdf, "dateStart" => minimum => "dateStart", "dateEnd" => maximum => "dateEnd")
 
-    crsp = crsp_data(dsn, df_temp, stockFile = stockFile1)
+    crsp = crsp_data(dsn, df_temp, stock_file = stockFile1)
 
     crspM = crsp_market(
         dsn,
-        stockFile = stockFile2,
+        stock_file = stockFile2,
         dateStart = minimum(df_temp[:, :dateStart]),
         dateEnd = maximum(df_temp[:, :dateEnd]),
         col = market_return
