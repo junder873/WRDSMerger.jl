@@ -79,7 +79,7 @@ function crsp_stocknames(
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
     warn_on_long=true
 )
-    if length(cusip) > 100 && warn_on_long
+    if length(permno) > 100 && warn_on_long
         @warn("Due to the size of the filter, it might be faster to download all data")
     end
     col_str = join(cols, ", ")
