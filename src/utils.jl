@@ -59,7 +59,7 @@ end
 
 struct Conditions
     fun::Function
-    l::Union{Symbol, String},
+    l::Union{Symbol, String}
     r::Union{Symbol, String}
 end
 
