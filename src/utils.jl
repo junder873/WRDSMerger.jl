@@ -1,15 +1,110 @@
 
+struct EventWindow
+    s::DatePeriod
+    e::DatePeriod
+end
 
-function setNewDate(col1, col2)
-    ret = Date[]
-    for i in 1:length(col1)
-        if typeof(col1[i]) == Missing
-            push!(ret, col2[i])
-        else
-            push!(ret, col1[i])
+
+EventWindow(x::Tuple{DatePeriod, DatePeriod}) = EventWindow(x[1], x[2])
+
+struct FFEstMethod
+    estimation_length::DatePeriod
+    gap_to_event::DatePeriod
+    min_est::Int
+    ff_sym::Array{Symbol}
+    event_window::Union{Missing, EventWindow}
+end
+
+function FFEstMethod(
+    ;
+    estimation_length::DatePeriod=BDay(150, :USNYSE),
+    gap_to_event::DatePeriod=BDay(15, :USNYSE),
+    min_est::Int=120,
+    ff_sym::Array{Symbol}=[:mktrf, :smb, :hml],
+    event_window::Union{Missing, EventWindow}=missing
+)
+    FFEstMethod(
+        estimation_length,
+        gap_to_event,
+        min_est,
+        ff_sym,
+        event_window
+    )
+end
+
+
+
+
+parse_date(d) = ismissing(d) ? missing : Date(d)
+
+run_sql_query(dsn::LibPQ.Connection, q::AbstractString) = LibPQ.execute(dsn, q) |> DataFrame
+function run_sql_query(
+    dsn::DBInterface.Connection,
+    q::AbstractString;
+    date_cols=[
+        "date",
+        "datadate",
+        "namedt",
+        "nameenddt"
+    ]
+)
+    temp = DBInterface.execute(dsn, q) |> DataFrame
+    for col in date_cols
+        if col ∈ names(temp)
+            temp[!, col] = parse_date.(temp[:, col])
         end
     end
-    return ret
+    return temp
+end
+
+struct Conditions
+    fun::Function
+    l::Union{Symbol, String},
+    r::Union{Symbol, String}
+end
+
+function Conditions(
+    l::Union{Symbol, String},
+    fun::Function,
+    r::Union{Symbol, String}
+)
+    Conditions(
+        fun,
+        l,
+        r
+    )
+end
+
+function Conditions(
+    x::Tuple{Function, Symbol, Symbol}
+)
+    Conditions(
+        x[1],
+        x[2],
+        x[3]
+    )
+end
+
+function range_join(
+    df1::DataFrame,
+    df2::DataFrame,
+    on,
+    conditions::Array{Tuple{Function, Symbol, Symbol}};
+    minimize=nothing,
+    join_conditions::Union{Array{Symbol}, Symbol}=:and,
+    validate::Tuple{Bool, Bool}=(false, false),
+    joinfun::Function=leftjoin
+)
+    range_join(
+        df1,
+        df2,
+        on,
+        Conditions.(conditions);
+        minimize,
+        join_conditions,
+        validate,
+        joinfun
+    )
 end
 
 
@@ -69,7 +164,7 @@ function range_join(
     df1::DataFrame,
     df2::DataFrame,
     on,
-    conditions::Array{Tuple{Function, Symbol, Symbol}};
+    conditions::Array{Conditions};
     minimize=nothing,
     join_conditions::Union{Array{Symbol}, Symbol}=:and,
     validate::Tuple{Bool, Bool}=(false, false),
@@ -84,8 +179,6 @@ function range_join(
 
     if minimize !== nothing
         min1, min2 = parse_ons(minimize)
-        # min1 = min1[1]
-        # min2 = min2[1]
     end
 
     gdf = groupby(df2, on2)
@@ -317,4 +410,47 @@ macro join(
     local new_conditions = conditions |> parse_expression |> expressions_to_conditions
     #local aakws = [esc(a) for a in args]
     esc(join_helper(df1, df2, on, new_conditions, args...))
+end
+
+function make_ff_est_windows!(
+    df,
+    ff_est;
+    date_start::String="dateStart",
+    date_end::String="dateEnd",
+    est_window_start::String="est_window_start",
+    est_window_end::String="est_window_end",
+    event_date::String="date",
+    suppress_warning::Bool=false
+)
+    if ismissing(ff_est.event_window)
+        if date_start ∉ names(df) || date_end ∉ names(df)
+            @error """
+                If `event_window` is `missing` in FFEstMethod,
+                $date_start and $date_end must be included instead.
+            """
+        end
+    else
+        if !suppress_warning && (date_start ∈ names(df) || date_end ∈ names(df))
+            @warn """
+                $date_start or $date_end are already in the
+                dataframe, passing a nonmissing value to
+                `FFEstMethod` `event_window` will overwrite
+                the preexisting values in $date_start and $date_end.
+            """
+        end
+        # if the estimation window has business days, adjust the event
+        # date to a business day
+        to_bday = typeof(ff_est.event_window.s) == BDay ? BDay(0, ff_est.event_window.s.calendar) : Day(0)
+        df[!, date_start] = df[:, event_date] .+ to_bday .+ ff_est.event_window.s
+        df[!, date_end] = df[:, event_date] .+ to_bday .+ ff_est.event_window.e
+    end
+    if est_window_end ∉ names(df) || est_window_start ∉ names(df)
+        df[!, est_window_end] = df[:, date_start] .- ff_est.gap_to_event
+
+        df[!, est_window_start] = df[:, est_window_end] .- ff_est.estimation_length
+        # I subtract an extra day since not doing so makes the trading
+        # window longer and the between gap a day shorter than it should be
+        extra_day = typeof(ff_est.gap_to_event) == BDay ? BDay(1, ff_est.gap_to_event.calendar) : Day(1)
+        df[!, est_window_end] .-= extra_day
+    end
 end

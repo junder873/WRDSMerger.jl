@@ -10,7 +10,7 @@ function compustatCrspLink(
         linktype in ('LU', 'LC') AND
         linkprim in ('P', 'C')       
     """
-    dfLink = LibPQ.execute(dsn, query) |> DataFrame;
+    dfLink = run_sql_query(dsn, query) |> DataFrame;
     if "linkenddt" in cols
         dfLink[!, :linkenddt] = coalesce.(dfLink[:, :linkenddt], Dates.today())
     end
@@ -47,7 +47,7 @@ function compustatCrspLink(
         linkprim in ('P', 'C') AND
         $id_col IN $fil
     """
-    dfLink = LibPQ.execute(dsn, query) |> DataFrame;
+    dfLink = run_sql_query(dsn, query) |> DataFrame;
     if "linkenddt" in cols
         dfLink[!, :linkenddt] = coalesce.(dfLink[:, :linkenddt], Dates.today())
     end
@@ -58,12 +58,12 @@ function compustatCrspLink(
 end
 
 function cik_to_gvkey(
-    dsn::LibPQ.Connection;
+    dsn::Union{LibPQ.Connection, DBInterface.Connection};
     cols::Array{String}=["gvkey", "cik"]
 )
     colString = join(cols, ", ")
     query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL"
-    return LibPQ.execute(dsn, query) |> DataFrame
+    return run_sql_query(dsn, query) |> DataFrame
 end
 
 function cik_to_gvkey(
@@ -84,7 +84,7 @@ function cik_to_gvkey(
         WHERE cik IS NOT NULL
         AND $id_col IN ('$(fil_str)')
     """
-    return LibPQ.execute(dsn, query) |> DataFrame
+    return run_sql_query(dsn, query) |> DataFrame
 end
 
 function join_permno_gvkey(
@@ -146,7 +146,7 @@ end
 
 
 function link_identifiers(
-    dsn::LibPQ.Connection,
+    dsn::Union{LibPQ.Connection, DBInterface.Connection},
     df::DataFrame;
     cik::Bool=false,
     ncusip::Bool=false,
@@ -419,11 +419,11 @@ function ibesCrspLink(dsn)
     query = """
         SELECT * FROM crsp.stocknames
     """
-    dfStocknames = LibPQ.execute(dsn, query) |> DataFrame;
+    dfStocknames = run_sql_query(dsn, query) |> DataFrame;
     query = """
         SELECT * FROM ibes.idsum WHERE usfirm=1
     """
-    dfIbesNames = LibPQ.execute(dsn, query) |> DataFrame;
+    dfIbesNames = run_sql_query(dsn, query) |> DataFrame;
     dfIbesNames[!, :sdates] = Dates.Date.(dfIbesNames.sdates)
     for col in [:namedt, :nameenddt, :st_date, :end_date]
         dfStocknames[!, col] = Dates.Date.(dfStocknames[:, col])

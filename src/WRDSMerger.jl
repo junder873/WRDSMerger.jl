@@ -9,11 +9,11 @@ using DataFrames
 using Dates
 using BusinessDays
 using Statistics
-#using IndexedTables: ndsparse, rows
 using FixedEffectModels
 using StringDistances
 using CSV
 using LibPQ
+using DBInterface
 using ParallelKMeans
 
 ##############################################################################
@@ -24,8 +24,10 @@ using ParallelKMeans
 
 export link_identifiers, comp_data,
     crsp_data, crsp_market, crsp_stocknames,
-    ibesCrspLink, calculate_car,
-    range_join, @join, BDay
+    crsp_adjust, crsp_delist,
+    ibesCrspLink, calculate_car, 
+    range_join, @join, BDay, FFEstMethod,
+    EventWindow
 
 ##############################################################################
 ##
