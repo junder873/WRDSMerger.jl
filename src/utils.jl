@@ -200,7 +200,7 @@ function range_join(
         fil = Array{Bool}(undef, nrow(temp))
         fil .= true
 
-        for (j, (fun, lcol, rcol)) in enumerate(conditions)
+        for (j, condition) in enumerate(conditions)
             temp_join = if typeof(join_conditions) <: Symbol
                 join_conditions
             elseif j == 1 # if it is the first time through, all the current values are
@@ -209,9 +209,17 @@ function range_join(
                 join_conditions[j-1]
             end
             if temp_join == :and
-                fil = fil .& broadcast(fun, df1[i, lcol], temp[:, rcol])
+                fil = fil .& broadcast(
+                    condition.fun,
+                    df1[i, condition.l],
+                    temp[:, condition.r]
+                )
             else
-                fil = fil .| broadcast(fun, df1[i, lcol], temp[:, rcol])
+                fil = fil .| broadcast(
+                    condition.fun,
+                    df1[i, condition.l],
+                    temp[:, condition.r]
+                )
             end
         end
 
