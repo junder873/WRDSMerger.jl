@@ -27,7 +27,7 @@ export link_identifiers, comp_data,
     crsp_adjust, crsp_delist,
     ibesCrspLink, calculate_car, 
     range_join, @join, BDay, FFEstMethod,
-    EventWindow
+    EventWindow, Conditions
 
 ##############################################################################
 ##
