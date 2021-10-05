@@ -45,7 +45,9 @@ function run_sql_query(
         "date",
         "datadate",
         "namedt",
-        "nameenddt"
+        "nameenddt",
+        "sdates",
+        "edates"
     ]
 )
     temp = DBInterface.execute(dsn, q) |> DataFrame
@@ -56,6 +58,21 @@ function run_sql_query(
     end
     return temp
 end
+
+mutable struct TableDefaults
+    comp_funda::String
+    comp_fundq::String
+    comp_company::String
+    crsp_stock_data::String
+    crsp_index::String
+    crsp_delist::String
+    crsp_stocknames::String
+    crsp_a_ccm_ccmxpf_lnkhist::String
+    ibes_idsum::String
+end
+
+
+    
 
 struct Conditions
     fun::Function
@@ -190,6 +207,13 @@ function range_join(
     end
 
     Threads.@threads for i in 1:nrow(df1)
+        # looking at the source code for "get", it is just running a try -> catch
+        # function, so if I could pre-identify the cases where this will fail
+        # I can avoid the try -> catch altogether
+        # for example, maybe doing a leftjoin before the loop and running through those
+        # results allow me to "skipmissing" in a way
+        # I did try testing this with a leftjoin before the loop, on a medium sample
+        # (~100,000 rows), it was 4 times slower, so need better method
         temp = get(
             gdf,
             Tuple(df1[i, on1]),

@@ -120,7 +120,6 @@ function calculate_car(
     ret_period::Tuple{<:DatePeriod, <:DatePeriod};
     date::String="date",
     idcol::String="permno",
-    stock_file_daily::Bool=true,
     market_return::String="vwretd"
 )
     calculate_car(
@@ -129,7 +128,6 @@ function calculate_car(
         EventWindow(ret_period);
         date,
         idcol,
-        stock_file_daily,
         market_return
     )
 end
@@ -140,25 +138,17 @@ function calculate_car(
     ret_period::EventWindow;
     date::String="date",
     idcol::String="permno",
-    stock_file_daily::Bool=true,
     market_return::String="vwretd"
 )
     df = copy(df)
     
     df[!, :dateStart] = df[:, date] .+ ret_period.s
     df[!, :dateEnd] = df[:, date] .+ ret_period.e
-    if !stock_file_daily
-        stockFile1 = "msf"
-        stockFile2 = "msi"
-    else
-        stockFile1 = "dsf"
-        stockFile2 = "dsi"
-    end
 
-    crsp = crsp_data(dsn, df, stock_file = stockFile1)
+
+    crsp = crsp_data(dsn, df)
     crspM = crsp_market(
         dsn,
-        stock_file = stockFile2,
         dateStart = minimum(df[:, :dateStart]),
         dateEnd = maximum(df[:, :dateEnd]),
         col = market_return
@@ -172,23 +162,14 @@ function calculate_car(
     date_start::String="dateStart",
     date_end::String="dateEnd",
     idcol::String="permno",
-    stock_file_daily::Bool=true,
     marketReturn::String = "vwretd"
 )
     df = copy(df)
 
-    if !stock_file_daily
-        stockFile1 = "msf"
-        stockFile2 = "msi"
-    else
-        stockFile1 = "dsf"
-        stockFile2 = "dsi"
-    end
 
-    crsp = crsp_data(dsn, df; stock_file = stockFile1, date_start, date_end)
+    crsp = crsp_data(dsn, df; date_start, date_end)
     crspM = crsp_market(
         dsn,
-        stock_file = stockFile2,
         dateStart = minimum(df[:, date_start]),
         dateEnd = maximum(df[:, date_end]),
         col = marketReturn
@@ -229,19 +210,12 @@ function calculate_car(
     ret_periods::Vector{EventWindow};
     date::String="date",
     idcol::String="permno",
-    stock_file_daily::Bool=true,
     market_return::String="vwretd",
 )
     
     df = df[:, :]
     df_temp = DataFrame()
-    if !stock_file_daily
-        stockFile1 = "msf"
-        stockFile2 = "msi"
-    else
-        stockFile1 = "dsf"
-        stockFile2 = "dsi"
-    end
+
     for ret_period in ret_periods
         df[!, :dateStart] = df[:, date] .+ ret_period.s
         df[!, :dateEnd] = df[:, date] .+ ret_period.e
@@ -254,14 +228,13 @@ function calculate_car(
     gdf = groupby(df_temp, [idcol, date])
     df_temp = combine(gdf, "dateStart" => minimum => "dateStart", "dateEnd" => maximum => "dateEnd")
 
-    crsp = crsp_data(dsn, df_temp, stock_file = stockFile1)
+    crsp = crsp_data(dsn, df_temp)
 
     crspM = crsp_market(
         dsn,
-        stock_file = stockFile2,
         dateStart = minimum(df_temp[:, :dateStart]),
         dateEnd = maximum(df_temp[:, :dateEnd]),
-        col = market_return
+        col = market_return,
     )
 
     return calculate_car((crsp, crpsM), df, ret_periods; date=date, idcol=idcol, market_return=market_return)

@@ -16,7 +16,7 @@ function crsp_stocknames(
 
     query = """
         SELECT DISTINCT $col_str
-        FROM crsp.stocknames
+        FROM $(default_tables.crsp_stocknames)
         WHERE ncusip != ''
     """
     return run_sql_query(dsn, query) |> DataFrame
@@ -40,11 +40,11 @@ function crsp_stocknames(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     cusip::Array{String};
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
-    cusip_col="cusip", # either "cusip" or "ncusip"
+    cusip_col="cusip", # either "cusip" "ncusip" or "ticker"
     warn_on_long=true
 )
-    if cusip_col ∉ ["cusip", "ncusip"]
-        @error("`cusip_col` must be one of \"cusip\" or \"ncusip\"")
+    if cusip_col ∉ ["cusip", "ncusip", "ticker"]
+        @error("`cusip_col` must be one of \"cusip\", \"ncusip\" or \"ticker\"")
     end
     if length(cusip) > 100 && warn_on_long
         @warn("Due to the size of the filter, it might be faster to download all data")
@@ -54,7 +54,7 @@ function crsp_stocknames(
 
     query = """
         SELECT DISTINCT $col_str
-        FROM crsp.stocknames
+        FROM $(default_tables.crsp_stocknames)
         WHERE ncusip != ''
         AND $cusip_col IN ('$(fil_str)')
     """
@@ -87,7 +87,7 @@ function crsp_stocknames(
 
     query = """
         SELECT DISTINCT $col_str
-        FROM crsp.stocknames
+        FROM $(default_tables.crsp_stocknames)
         WHERE ncusip != ''
         AND permno IN ($(fil_str))
     """
@@ -99,7 +99,6 @@ end
 """
     function crsp_market(
         dsn::Union{LibPQ.Connection, DBInterface.Connection};
-        stock_file = "dsi",
         dateStart = Dates.Date(1925, 1, 1),
         dateEnd = Dates.today(),
         col = "vwretd"
@@ -116,7 +115,6 @@ for each day (with various return columns). Available columns are:
 """
 function crsp_market(
     dsn::Union{LibPQ.Connection, DBInterface.Connection};
-    stock_file = "dsi",
     dateStart = Dates.Date(1925, 1, 1),
     dateEnd = Dates.today(),
     col = "vwretd"
@@ -134,7 +132,7 @@ function crsp_market(
 
     query = """
                         select $col_str
-                        from crsp.$stock_file
+                        from $(default_tables.crsp_index)
                         where date between '$dateStart' and '$dateEnd'
                         """
     crsp = run_sql_query(dsn, query) |> DataFrame;
@@ -261,7 +259,6 @@ end
     function crsp_data(
         dsn::Union{LibPQ.Connection, DBInterface.Connection},
         df::DataFrame;
-        stock_file = "dsf",
         cols = ["ret", "vol", "shrout"],
         pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
         date_start::String="dateStart",
@@ -271,7 +268,6 @@ end
 Downloads data from the crsp stockfiles, which are individual stocks.
 
 # Arguments
-- `stock_file::String="dsf"`: must be either "dsf" or "msf" for daily or monthly, respectively
 - `pull_method::Symbol=:optimize`: designates the method the function will pull the data,
         to help minimize the amount of data needed. The available methods are:
     - `:optimize`: uses a clustering algorithm (kmeans) to find common or nearby dates
@@ -291,7 +287,6 @@ Downloads data from the crsp stockfiles, which are individual stocks.
 function crsp_data(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     df::DataFrame;
-    stock_file::String = "dsf",
     cols = ["ret", "vol", "shrout"],
     pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
     date_start::String="dateStart",
@@ -317,7 +312,7 @@ function crsp_data(
 
     colString = join(cols, ", ")
     
-    query = "SELECT $colString FROM crsp.$stock_file WHERE "
+    query = "SELECT $colString FROM $(default_tables.crsp_stock_data) WHERE "
 
     if pull_method == :optimize
         df[!, :date_val] = Float64.(Dates.value.(df[:, date_start]))
@@ -367,7 +362,7 @@ function crsp_data(
 
     crsp = run_sql_query(dsn, query) |> DataFrame
     if adjust_crsp_data
-        crsp = crsp_adjust(dsn, df)
+        crsp = crsp_adjust(dsn, crsp)
     end
     return crsp
 end
@@ -377,13 +372,11 @@ end
         dsn::Union{LibPQ.Connection, DBInterface.Connection},
         s::Date,
         e::Date;
-        stock_file = "dsf",
         cols = ["ret", "vol", "shrout"],
         adjust_crsp_data::Bool=true
     )
 
-Downloads all crsp stock data between the start and end date. `stock_file` must be
-"dsf" or "msf" for daily or monthly returns.
+Downloads all crsp stock data between the start and end date.
 
 ## Arguments
 - `adjust_crsp_data::Bool=true`: This will call `crsp_adjust` with all options
@@ -393,7 +386,6 @@ function crsp_data(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     s::Date,
     e::Date;
-    stock_file = "dsf",
     cols = ["ret", "vol", "shrout"],
     adjust_crsp_data::Bool=true
 )
@@ -407,12 +399,12 @@ function crsp_data(
 
     query = """
         select $colString
-        from crsp.$stock_file
+        from $(default_tables.crsp_stock_data)
         where date between '$(s)' and '$(e)'
     """
     crsp = run_sql_query(dsn, query) |> DataFrame
     if adjust_crsp_data
-        crsp = crsp_adjust(dsn, df)
+        crsp = crsp_adjust(dsn, crsp)
     end
     return crsp
 end
@@ -426,7 +418,6 @@ end
             "dlstdt",
             "dlret"
         ],
-        daily=true,
         date_start::Date=Date(1926),
         date_end::Date=today()
     )
@@ -441,14 +432,12 @@ function crsp_delist(
         "dlstdt",
         "dlret"
     ],
-    daily=true,
     date_start::Date=Date(1926),
     date_end::Date=today()
 )
     col_str = join(cols, ", ")
-    dataset = daily ? "crsp.dsedelist" : "crsp.msedelist"
     query = """
-    SELECT $col_str FROM $dataset
+    SELECT $col_str FROM $(default_tables.crsp_delist)
     WHERE dlret IS NOT NULL
     AND dlret != 0
     AND dlstdt BETWEEN '$date_start' AND '$date_end'

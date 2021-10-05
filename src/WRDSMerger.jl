@@ -43,4 +43,17 @@ include("mergeFunctions.jl")
 include("date_functions.jl")
 
 
+global default_tables = TableDefaults(
+    "compa.funda",
+    "compa.fundq",
+    "comp.company",
+    "crsp.dsf",
+    "crsp.dsi",
+    "crsp.dsedelist",
+    "crsp.stocknames",
+    "crsp_a_ccm.ccmxpf_lnkhist",
+    "ibes.idsum"
+)
+
+
 end # module

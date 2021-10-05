@@ -5,7 +5,7 @@ function compustatCrspLink(
     col_str = join(cols, ", ")
     query = """
         select distinct $col_str
-        from crsp_a_ccm.ccmxpf_lnkhist
+        from $(default_tables.crsp_a_ccm_ccmxpf_lnkhist)
         where lpermno IS NOT NULL AND
         linktype in ('LU', 'LC') AND
         linkprim in ('P', 'C')       
@@ -41,7 +41,7 @@ function compustatCrspLink(
     end
     query = """
         select distinct $col_str
-        from crsp_a_ccm.ccmxpf_lnkhist
+        from $(default_tables.crsp_a_ccm_ccmxpf_lnkhist)
         where lpermno IS NOT NULL AND
         linktype in ('LU', 'LC') AND
         linkprim in ('P', 'C') AND
@@ -57,12 +57,82 @@ function compustatCrspLink(
     return dfLink
 end
 
+function ibes_crsp_link(
+    dsn::Union{LibPQ.Connection, DBInterface.Connection};
+    cols::Vector{String}=["ticker", "permno", "sdates", "edates", "score"],
+    filter_score::Int=4 # maximum of 6
+)
+    col_str = join(cols, ", ")
+    query = """
+        SELECT DISTINCT $col_str FROM wrdsapps.ibcrsphist
+        WHERE score <= $filter_score
+        AND permno IS NOT NULL
+    """
+    df = run_sql_query(dsn, query)
+    if "edates" ∈ names(df)
+        df[!, "edates"] = coalesce.(df[:, "edates"], Dates.today())
+    end
+    return df
+end
+
+function ibes_crsp_link(
+    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    tickers::Vector{String};
+    cols::Vector{String}=["ticker", "permno", "sdates", "edates", "score"],
+    filter_score::Int=4 # maximum of 6
+)
+    if length(tickers) == 0 || length(tickers) > 1000
+        return ibes_crsp_link(dsn; cols, filter_score)
+    end
+
+    col_str = join(cols, ", ")
+    fil = "('" * join(tickers, "', '") * "')"
+
+    query = """
+        SELECT DISTINCT $col_str FROM wrdsapps.ibcrsphist
+        WHERE score <= $filter_score
+        AND permno IS NOT NULL
+        AND ticker IN $fil
+    """
+    df = run_sql_query(dsn, query)
+    if "edates" ∈ names(df)
+        df[!, "edates"] = coalesce.(df[:, "edates"], Dates.today())
+    end
+    return df
+end
+
+function ibes_crsp_link(
+    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    permno::Vector{Number};
+    cols::Vector{String}=["ticker", "permno", "sdates", "edates", "score"],
+    filter_score::Int=4 # maximum of 6
+)
+    if length(permno) == 0 || length(permno) > 1000
+        return ibes_crsp_link(dsn; cols, filter_score)
+    end
+
+    col_str = join(cols, ", ")
+    fil = "(" * join(permno, ", ") * ")"
+
+    query = """
+        SELECT DISTINCT $col_str FROM wrdsapps.ibcrsphist
+        WHERE score <= $filter_score
+        AND permno IS NOT NULL
+        AND permno IN $fil
+    """
+    df = run_sql_query(dsn, query)
+    if "edates" ∈ names(df)
+        df[!, "edates"] = coalesce.(df[:, "edates"], Dates.today())
+    end
+    return df
+end
+
 function cik_to_gvkey(
     dsn::Union{LibPQ.Connection, DBInterface.Connection};
     cols::Array{String}=["gvkey", "cik"]
 )
     colString = join(cols, ", ")
-    query = "SELECT DISTINCT $colString FROM comp.company WHERE cik IS NOT NULL"
+    query = "SELECT DISTINCT $colString FROM $(default_tables.comp_company) WHERE cik IS NOT NULL"
     return run_sql_query(dsn, query) |> DataFrame
 end
 
@@ -80,7 +150,7 @@ function cik_to_gvkey(
     fil_str = join(unique(vals), "', '")
     query = """
         SELECT DISTINCT $colString
-        FROM comp.company
+        FROM $(default_tables.comp_company)
         WHERE cik IS NOT NULL
         AND $id_col IN ('$(fil_str)')
     """
@@ -153,6 +223,8 @@ function link_identifiers(
     cusip::Bool=false,
     gvkey::Bool=false,
     permno::Bool=false,
+    ticker::Bool=false,
+    ibes_ticker::Bool=false,
     forceUnique::Bool=false,
     datecol::String="date",
     cik_name::String="cik",
@@ -160,12 +232,15 @@ function link_identifiers(
     gvkey_name::String="gvkey",
     permno_name::String="permno",
     ncusip_name::String="ncusip",
+    ticker_name::String="ticker",
+    ibes_ticker_name::String="ibes_ticker"
+
 )
     df = copy(df)
     if datecol ∉ names(df)
         throw("DataFrame must include a date column")
     end
-    col_count = sum([x in names(df) for x in [cik_name, ncusip_name, cusip_name, gvkey_name, permno_name]])
+    col_count = sum([x in names(df) for x in [cik_name, ncusip_name, cusip_name, gvkey_name, permno_name, ticker_name, ibes_ticker_name]])
     if col_count == 0
         throw("DataFrame must include identifying column: cik, cusip, ncusip, gvkey, or permno")
     end
@@ -226,7 +301,59 @@ function link_identifiers(
         identifier_was_int=true
         dropmissing!(df, "permno")
     end
+    if ticker_name in names(df)
+        ticker=true
+        identifying_col="ticker"
+        rename!(df, ticker_name => "ticker")
+        identifier_was_int=false
+        dropmissing!(df, "ticker")
+    end
+    if ibes_ticker_name in names(df)
+        ibes_ticker=true
+        identifying_col="ibes_ticker"
+        rename!(df, ibes_ticker_name => "ibes_ticker")
+        identifier_was_int=false
+        dropmissing!(df, "ibes_ticker")
+    end
 
+
+    if identifying_col == "ibes_ticker"
+        ibes_to_crsp = ibes_crsp_link(
+            dsn,
+            df[:, "ibes_ticker"];
+        )
+        df[!, :_temp_min] .= 0 # to use the minimize function in the range join
+        df = range_join(
+            df,
+            ibes_to_crsp,
+            ["ibes_ticker" => "ticker"],
+            [
+                Conditions(<=, datecol, "edates"),
+                Conditions(>=, datecol, "sdates")
+            ],
+            validate=(false, true),
+            minimize=["score" => "_temp_min"]
+        )
+        select!(df, Not(["sdates", "edates", "_temp_min"]))
+        if any([cusip, ncusip, gvkey, cik])
+            temp = link_identifiers(
+                dsn,
+                df[:, ["permno", datecol]] |> dropmissing |> unique;
+                cusip,
+                ncusip,
+                gvkey,
+                cik,
+                datecol
+            )
+            df = leftjoin(
+                df,
+                temp,
+                on=["permno", datecol],
+                validate=(false, true),
+                matchmissing=:equal
+            )
+        end
+    end
 
     # cik is only easy to link to gvkey, so that must come first
     if identifying_col == "cik"
@@ -257,7 +384,7 @@ function link_identifiers(
     end
 
     # If gvkey, need to get the link to permno
-    if identifying_col == "gvkey" && any([permno, cusip, ncusip])
+    if identifying_col == "gvkey" && any([permno, cusip, ncusip, ibes_ticker, ticker])
         permno_gvkey = join_permno_gvkey(
             dsn,
             df;
@@ -271,12 +398,14 @@ function link_identifiers(
             on=["gvkey", datecol],
             validate=(false, true)
         )
-        if any([cusip, ncusip])
+        if any([cusip, ncusip, ticker, ibes_ticker])
             crsp = link_identifiers(
                 dsn,
                 dropmissing(permno_gvkey[:, ["permno", datecol]]) |> unique;
                 ncusip,
                 cusip,
+                ticker,
+                ibes_ticker,
                 datecol
             )
             df = leftjoin(
@@ -305,7 +434,7 @@ function link_identifiers(
 
     # if ncusip or cusip, first need the permno set (which is trivial)
     # if still need gvkey or cik then permno is necessary
-    if identifying_col ∈ ["ncusip", "cusip"]
+    if identifying_col ∈ ["ncusip", "cusip", "ticker"]
         crsp = crsp_stocknames(
             dsn,
             df[:, identifying_col];
@@ -325,12 +454,13 @@ function link_identifiers(
             validate=(false, true)
         )
         select!(df, Not([:namedt, :nameenddt]))
-        if gvkey || cik
+        if gvkey || cik || ibes_ticker
             crsp = link_identifiers(
                 dsn,
                 dropmissing(df[:, ["permno", datecol]]) |> unique;
                 cik,
                 gvkey,
+                ibes_ticker,
                 datecol
             )
             df = leftjoin(
@@ -346,7 +476,7 @@ function link_identifiers(
     # the final case I need to deal with is permno, it is a major link between several
     # of the datasets
     if identifying_col == "permno"
-        if ncusip || cusip
+        if ncusip || cusip || ticker
             crsp = crsp_stocknames(
                 dsn,
                 df[:, identifying_col];
@@ -390,6 +520,25 @@ function link_identifiers(
                 )
             end
         end
+        if ibes_ticker
+            ibes_to_crsp = ibes_crsp_link(
+                dsn,
+                df[:, "permno"];
+            )
+            df[!, :_temp_min] .= 0
+            df = range_join(
+                df,
+                ibes_to_crsp,
+                ["permno"],
+                [
+                    Conditions(<=, datecol, "edates"),
+                    Conditions(>=, datecol, "sdates")
+                ];
+                validate=(false, true),
+                minimize=["score" => "_temp_min"]
+            )
+            select!(df, Not(["sdates", "edates", "_temp_min"]))
+        end
     end
 
     clean_up = [
@@ -397,7 +546,9 @@ function link_identifiers(
         (cusip, "cusip", cusip_name),
         (gvkey, "gvkey", gvkey_name),
         (permno, "permno", permno_name),
-        (cik, "cik", cik_name)
+        (cik, "cik", cik_name),
+        (ticker, "ticker", ticker_name),
+        (ibes_ticker, "ibes_ticker", ibes_ticker_name)
     ]
 
     for (to_include, cur_name, new_name) in clean_up
@@ -413,105 +564,4 @@ function link_identifiers(
         df[!, identifying_col] = parse.(Int, df[:, identifying_col])
     end
     return df
-end
-
-function ibesCrspLink(dsn)
-    query = """
-        SELECT * FROM crsp.stocknames
-    """
-    dfStocknames = run_sql_query(dsn, query) |> DataFrame;
-    query = """
-        SELECT * FROM ibes.idsum WHERE usfirm=1
-    """
-    dfIbesNames = run_sql_query(dsn, query) |> DataFrame;
-    dfIbesNames[!, :sdates] = Dates.Date.(dfIbesNames.sdates)
-    for col in [:namedt, :nameenddt, :st_date, :end_date]
-        dfStocknames[!, col] = Dates.Date.(dfStocknames[:, col])
-    end
-
-    dfIbesNamesTemp = unique(dfIbesNames[:, [:ticker, :cusip, :cname, :sdates]])
-    dfStocknamesTemp = unique(dfStocknames[:, [:permno, :ncusip, :comnam, :namedt, :nameenddt]])
-    dropmissing!(dfStocknamesTemp, :ncusip)
-
-    gd = groupby(dfIbesNames[:, [:ticker, :cusip, :sdates]], [:ticker, :cusip])
-    dfTemp = combine(gd, valuecols(gd) .=> [minimum, maximum])
-    dfIbesNamesTemp = leftjoin(dfIbesNamesTemp, dfTemp, on=[:ticker, :cusip])
-    dfIbesNamesTemp = dfIbesNamesTemp[dfIbesNamesTemp.sdates .== dfIbesNamesTemp.sdates_maximum, :]
-    dropmissing!(dfIbesNamesTemp, :cname)
-
-    gd = groupby(dfStocknamesTemp, [:permno, :ncusip, :comnam])
-    dfStocknamesTemp = combine(gd, :namedt => minimum, :nameenddt => maximum)
-    sort!(dfStocknamesTemp, [:permno, :ncusip, :namedt_minimum])
-    dfStocknamesTemp = vcat([i[[end], :] for i in groupby(dfStocknamesTemp, [:permno, :ncusip])]...)
-
-
-    dfLink1 = innerjoin(dfIbesNamesTemp, dfStocknamesTemp, on=[:cusip => :ncusip])
-    dfLink1[!, :nameDist] = [compare(dfLink1.cname[i], dfLink1.comnam[i], Levenshtein()) for i in 1:size(dfLink1, 1)]
-    dfLink1[!, :score] .= 3
-
-    minimum_ratio = quantile(dfLink1.nameDist, .1)
-    for i in 1:size(dfLink1, 1)
-        between = dfLink1.namedt_minimum[i] <= dfLink1.sdates_maximum[i] && dfLink1.nameenddt_maximum[i] >= dfLink1.sdates_minimum[i]
-        namesMatch = dfLink1.nameDist[i] >= minimum_ratio
-        dfLink1[i, :score] = if between && namesMatch
-            0
-        elseif between
-            1
-        elseif namesMatch
-            2
-        else
-            3
-        end
-    end
-
-
-
-    dfTemp = unique(dfLink1[:, [:ticker]])
-    dfTemp[!, :match] .= 1
-    dfMissings = leftjoin(dfIbesNames, dfTemp, on=:ticker)
-    dfMissings = dfMissings[typeof.(dfMissings.match) .== Missing, :]
-    select!(dfMissings, Not(:match))
-    dfIbesNamesTemp = dfMissings[:, [:ticker, :cname, :oftic, :sdates, :cusip]]
-    gd = groupby(dfIbesNames[:, [:ticker, :oftic, :sdates]], [:ticker, :oftic])
-    dfTemp = combine(gd, valuecols(gd) .=> [minimum, maximum])
-    dropmissing!(dfTemp, [:ticker, :oftic])
-    dropmissing!(dfIbesNamesTemp, [:ticker, :oftic])
-    dfIbesNamesTemp = leftjoin(dfIbesNamesTemp, dfTemp, on=[:ticker, :oftic])
-    dfIbesNamesTemp = dfIbesNamesTemp[dfIbesNamesTemp.sdates .== dfIbesNamesTemp.sdates_maximum, :]
-    dropmissing!(dfIbesNamesTemp, :cname)
-
-    dfStocknamesTemp = dfStocknames[:, [:ticker, :comnam, :permno, :ncusip, :namedt, :nameenddt]]
-    dropmissing!(dfStocknamesTemp, :ticker)
-    gd = groupby(dfStocknamesTemp, [:permno, :ticker, :ncusip, :comnam])
-    dfStocknamesTemp = combine(gd, :namedt => minimum, :nameenddt => maximum)
-    sort!(dfStocknamesTemp, [:permno, :ticker, :namedt_minimum])
-    dfStocknamesTemp = vcat([i[[end], :] for i in groupby(dfStocknamesTemp, [:permno, :ticker])]...)
-    rename!(dfStocknamesTemp, :ticker => :ticker_crsp)
-
-    dfLink2 = innerjoin(dfIbesNamesTemp, dfStocknamesTemp, on=[:oftic => :ticker_crsp])
-    dfLink2 = dfLink2[.&(dfLink2.sdates_maximum .>= dfLink2.namedt_minimum,
-                        dfLink2.sdates_minimum .<= dfLink2.nameenddt_maximum), :]
-    dfLink2[!, :nameDist] = [compare(dfLink2.cname[i], dfLink2.comnam[i], Levenshtein()) for i in 1:size(dfLink2, 1)]
-
-    dfLink2[!, :score] .= 6
-    for i in 1:size(dfLink2, 1)
-        cusipMatch = dfLink2[i, :cusip][1:6] == dfLink2[i, :ncusip][1:6]
-        namesMatch = dfLink2.nameDist[i] >= minimum_ratio
-        dfLink2[i, :score] = if cusipMatch && namesMatch
-            0
-        elseif cusipMatch
-            4
-        elseif namesMatch
-            5
-        else
-            6
-        end
-    end
-
-    dfOutput = unique(vcat(dfLink1[:, [:ticker, :permno, :score]], dfLink2[:, [:ticker, :permno, :score]]))
-    dropmissing!(dfOutput)
-    sort!(dfOutput, [:ticker, :permno, :score])
-    rename!(dfOutput, :score => :matchQuality)
-    dfOutput = vcat([i[[1], :] for i in groupby(dfOutput, [:ticker, :permno])]...)
-    return dfOutput
 end

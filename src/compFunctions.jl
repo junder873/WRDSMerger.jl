@@ -26,7 +26,7 @@ end
         gvkeys::AbstractArray{String},
         dateStart::Union{Date, Int},
         dateEnd::Union{Date, Int};
-        fund::String="funda",
+        annual::Bool=true,
         filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
             "datafmt" => "STD",
             "indfmt" => "INDL",
@@ -37,7 +37,7 @@ end
     )
 
 Downloads data from Compustat for a group of firms over a period. Data can be annual
-(set `fund="funda"`) or quarterly (set `fund="fundq"`). For
+(set `annual=true`) or quarterly (set `annual=false`). For
 quarterly data, you also likely need to change the columns
 that are downloaded (ie, sales is "saleq" in quarterly data).
 
@@ -49,7 +49,7 @@ function comp_data(
     gvkeys::AbstractArray{String},
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
-    fund::String="funda",
+    annual::Bool=true,
     filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
         "datafmt" => "STD",
         "indfmt" => "INDL",
@@ -65,13 +65,13 @@ function comp_data(
         dateEnd = Dates.Date(dateEnd, 12, 31)
     end
 
+    tab = annual ? default_tables.comp_funda : default_tables.comp_fundq
+
     colString = join(cols, ", ")
     filterString = createFilter(filters)
     gvkey_str = "('" * join(gvkeys, "', '") * "')"
-    date_start = minimum(df[:, date_start])
-    date_end = maximum(df[:, date_end])
     query = """
-        SELECT $colString FROM compa.$fund
+        SELECT $colString FROM $tab
         WHERE datadate BETWEEN '$(dateStart)' and '$(dateEnd)'
         AND gvkey IN $gvkey_str $filterString
         """
@@ -86,7 +86,7 @@ end
         dsn::Union{LibPQ.Connection, DBInterface.Connection},
         dateStart::Union{Date,Int}=1950,
         dateEnd::Union{Date,Int}=Dates.today();
-        fund::String="funda",
+        annual::Bool=true,
         filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
             "datafmt" => "STD",
             "indfmt" => "INDL",
@@ -97,7 +97,7 @@ end
     )
 
 Downloads data from Compustat for all available firms over a period. Data can be annual
-(set `fund="funda"`) or quarterly (set `fund="fundq"`). For
+(set `annual=true`) or quarterly (set `annual=false`). For
 quarterly data, you also likely need to change the columns
 that are downloaded (ie, sales is "saleq" in quarterly data).
 
@@ -108,7 +108,7 @@ function comp_data(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
-    fund::String="funda",
+    annual::Bool=true,
     filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
         "datafmt" => "STD",
         "indfmt" => "INDL",
@@ -125,11 +125,13 @@ function comp_data(
         dateEnd = Dates.Date(dateEnd, 12, 31)
     end
 
+    tab = annual ? default_tables.comp_funda : default_tables.comp_fundq
+
     colString = join(cols, ", ")
     filterString = createFilter(filters)
     query = """
         select $colString
-        from compa.$fund
+        from $tab
         where datadate between '$dateStart' and '$dateEnd' $filterString
     """
     
