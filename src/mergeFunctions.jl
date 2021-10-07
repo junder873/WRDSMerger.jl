@@ -437,7 +437,7 @@ function link_identifiers(
     if identifying_col ∈ ["ncusip", "cusip", "ticker"]
         crsp = crsp_stocknames(
             dsn,
-            df[:, identifying_col];
+            df[:, identifying_col] |> unique;
             cusip_col=identifying_col,
         )
         crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
@@ -478,7 +478,7 @@ function link_identifiers(
         if ncusip || cusip || ticker
             crsp = crsp_stocknames(
                 dsn,
-                df[:, identifying_col];
+                df[:, identifying_col] |> unique;
             )
             crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
             crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
