@@ -46,8 +46,8 @@ function crsp_stocknames(
     if cusip_col ∉ ["cusip", "ncusip", "ticker"]
         @error("`cusip_col` must be one of \"cusip\", \"ncusip\" or \"ticker\"")
     end
-    if length(cusip) > 100 && warn_on_long
-        @warn("Due to the size of the filter, it might be faster to download all data")
+    if length(cusip) == 0 || length(cusip) > 1000
+        crsp_stocknames(dsn; cols)
     end
     col_str = join(cols, ", ")
     fil_str = join(cusip, "', '")
@@ -77,10 +77,9 @@ function crsp_stocknames(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     permno::Array{<:Number};
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
-    warn_on_long=true
 )
-    if length(permno) > 100 && warn_on_long
-        @warn("Due to the size of the filter, it might be faster to download all data")
+    if length(permno) == 0 || length(permno) > 1000
+        crsp_stocknames(dsn; cols)
     end
     col_str = join(cols, ", ")
     fil_str = join(permno, ", ")

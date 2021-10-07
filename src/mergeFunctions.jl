@@ -439,7 +439,6 @@ function link_identifiers(
             dsn,
             df[:, identifying_col];
             cusip_col=identifying_col,
-            warn_on_long=false
         )
         crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
         crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
@@ -480,7 +479,6 @@ function link_identifiers(
             crsp = crsp_stocknames(
                 dsn,
                 df[:, identifying_col];
-                warn_on_long=false
             )
             crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
             crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
