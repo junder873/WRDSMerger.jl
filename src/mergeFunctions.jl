@@ -164,7 +164,7 @@ function join_permno_gvkey(
     forceUnique::Bool=false,
     datecol::String="date"
 )
-    comp = unique(compustatCrspLink(dsn, df[:, id_col]; id_col))
+    comp = unique(compustatCrspLink(dsn, df[:, id_col] |> unique; id_col))
 
     comp[!, :linkdt] = coalesce.(comp[:, :linkdt], minimum(df[:, datecol]))
 

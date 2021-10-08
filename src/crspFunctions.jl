@@ -41,13 +41,12 @@ function crsp_stocknames(
     cusip::Array{String};
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
     cusip_col="cusip", # either "cusip" "ncusip" or "ticker"
-    warn_on_long=true
 )
     if cusip_col ∉ ["cusip", "ncusip", "ticker"]
         @error("`cusip_col` must be one of \"cusip\", \"ncusip\" or \"ticker\"")
     end
     if length(cusip) == 0 || length(cusip) > 1000
-        crsp_stocknames(dsn; cols)
+        return crsp_stocknames(dsn; cols)
     end
     col_str = join(cols, ", ")
     fil_str = join(cusip, "', '")
@@ -79,7 +78,7 @@ function crsp_stocknames(
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
 )
     if length(permno) == 0 || length(permno) > 1000
-        crsp_stocknames(dsn; cols)
+        return crsp_stocknames(dsn; cols)
     end
     col_str = join(cols, ", ")
     fil_str = join(permno, ", ")

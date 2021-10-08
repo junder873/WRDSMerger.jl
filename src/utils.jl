@@ -124,6 +124,20 @@ function range_join(
     )
 end
 
+function change_function(fun)
+    if fun == <=
+        return >=
+    elseif fun == >=
+        return <=
+    elseif fun == >
+        return <
+    elseif fun == <
+        return >
+    else
+        return !fun
+    end
+end
+
 
 """
 
@@ -185,9 +199,45 @@ function range_join(
     minimize=nothing,
     join_conditions::Union{Array{Symbol}, Symbol}=:and,
     validate::Tuple{Bool, Bool}=(false, false),
-    joinfun::Function=leftjoin
+    joinfun::Function=leftjoin,
+    drop_col=:right # either right or left
 )
 
+    if nrow(df1) > nrow(df2) # the fewer main loops this goes through
+        # the faster it is overall, if they are about equal
+        # this likely slows things down, but it is
+        # significantly faster if it is flipped for large sets
+        new_cond = Conditions[]
+        for con in conditions
+            push!(new_cond, Conditions(change_function(con.fun), con.r, con.l))
+        end
+        on1, on2 = parse_ons(on)
+        if minimize !== nothing
+            min1, min2 = parse_ons(minimize)
+            new_min = [min2[i] => min1[i] for i in 1:length(min1)]
+        else
+            new_min=nothing
+        end
+        if joinfun == leftjoin
+            new_join = rightjoin
+        elseif joinfun == rightjoin
+            new_join = leftjoin
+        else
+            new_join = joinfun
+        end
+        new_drop = drop_col == :right ? :left : :right
+        return range_join(
+            df2,
+            df1,
+            [on2[i] => on1[i] for i in 1:length(on1)],
+            new_cond;
+            minimize=new_min,
+            join_conditions,
+            validate=(validate[2], validate[1]),
+            joinfun=new_join,
+            drop_col=new_drop
+        )
+    end
     df1 = df1[:, :]
     df2 = df2[:, :]
     df2[!, :_index2] = 1:nrow(df2)
@@ -269,8 +319,11 @@ function range_join(
     end
 
     df1 = flatten(df1, :_index2)
-
-    select!(df2, Not(on2))
+    if drop_col == :right
+        select!(df2, Not(on2))
+    else
+        select!(df1, Not(on1))
+    end
     df1 = joinfun(df1, df2, on=:_index2, validate=(validate[1], true))
     select!(df1, Not([:_index2]))
 
