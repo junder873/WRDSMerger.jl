@@ -21,10 +21,11 @@ function calculate_car(
     market_return::String="vwretd",
     out_cols=[
         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car"] .=> std
+        ["car"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar"
     ]
 )
-    df = df[:, :]
+    df = copy(df)
     BusinessDays.initcache(:USNYSE)
     df[!, :businessDays] = bdayscount(:USNYSE, df[:, date_start], df[:, date_end]) .+ 1
 
@@ -45,25 +46,15 @@ function calculate_car(
         crsp,
         [idcol],
         [
-            (<=, Symbol(date_start), :retDate),
-            (>=, Symbol(date_end), :retDate)
+            Conditions(<=, date_start, :retDate),
+            Conditions(>=, date_end, :retDate)
         ]
     )
 
     
-    # select!(df, Not([date_start, date_end, "retDate"]))
-    # aggCols = [idcol, date, "businessDays"]
-    # if "name" in names(df)
-    #     push!(aggCols, "name")
-    # end
-    gd = groupby(df[:, vcat(aggCols, ["plus1", "plus1m"])], aggCols)
-    df2 = combine(gd, valuecols(gd) .=> prod)
-    df2[!, :bhar] = df2[:, :plus1_prod] .- df2[:, :plus1m_prod]
-    select!(df2, Not([:plus1_prod, :plus1m_prod]))
-    select!(df, Not([:plus1, :plus1m]))
     gd = groupby(df, aggCols)
     df = combine(gd, out_cols...)
-    df = leftjoin(df, df2, on=aggCols)
+
     return df
 end
 
@@ -75,7 +66,8 @@ function calculate_car(
     idcol::String="permno",
     out_cols=[
         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car"] .=> std
+        ["car"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar"
     ],
     market_return::String="vwretd"
 )
@@ -98,10 +90,12 @@ function calculate_car(
     idcol::String="permno",
     out_cols=[
         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car"] .=> std
+        ["car"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar"
     ],
     market_return::String="vwretd"
 )
+    df = copy(df)
     if date ∉ names(df)
         throw(ArgumentError("The $date column is not found in the dataframe"))
     end
@@ -145,15 +139,14 @@ function calculate_car(
     df[!, :dateStart] = df[:, date] .+ ret_period.s
     df[!, :dateEnd] = df[:, date] .+ ret_period.e
 
-
-    crsp = crsp_data(dsn, df)
-    crspM = crsp_market(
+    return calculate_car(
         dsn,
-        dateStart = minimum(df[:, :dateStart]),
-        dateEnd = maximum(df[:, :dateEnd]),
-        col = market_return
+        df;
+        date_start="dateStart",
+        date_end="dateEnd",
+        idcol,
+        market_return
     )
-    return calculate_car((crsp, crspM), df, ret_period; date=date, idcol=idcol, market_return=market_return)
 end
 
 function calculate_car(
@@ -162,7 +155,7 @@ function calculate_car(
     date_start::String="dateStart",
     date_end::String="dateEnd",
     idcol::String="permno",
-    marketReturn::String = "vwretd"
+    market_return::String = "vwretd"
 )
     df = copy(df)
 
@@ -172,7 +165,7 @@ function calculate_car(
         dsn,
         dateStart = minimum(df[:, date_start]),
         dateEnd = maximum(df[:, date_end]),
-        col = marketReturn
+        col = market_return
     )
     return calculate_car((crsp, crspM), df; date_start, date_end, idcol)
 end
@@ -189,7 +182,7 @@ function calculate_car(
 )
 
 
-    df = df[:, :]
+    df = copy(df)
 
     dfAll = DataFrame()
 
@@ -213,7 +206,7 @@ function calculate_car(
     market_return::String="vwretd",
 )
     
-    df = df[:, :]
+    df = copy(df)
     df_temp = DataFrame()
 
     for ret_period in ret_periods
@@ -237,7 +230,7 @@ function calculate_car(
         col = market_return,
     )
 
-    return calculate_car((crsp, crpsM), df, ret_periods; date=date, idcol=idcol, market_return=market_return)
+    return calculate_car((crsp, crspM), df, ret_periods; date=date, idcol=idcol, market_return=market_return)
 
 end
 
@@ -247,6 +240,7 @@ function calculate_car(
     ff_est::FFEstMethod;
     date_start::String="dateStart",
     date_end::String="dateEnd",
+    event_date::String="date",
     est_window_start::String="est_window_start",
     est_window_end::String="est_window_end",
     idcol::String="permno",
@@ -269,13 +263,14 @@ function calculate_car(
         on=:date,
         validate=(false, true)
     )
+    rename!(crsp_raw, "date" => "return_date")
     ff_est_windows = range_join(
         df,
         crsp_raw,
         [idcol],
         [
-            (<=, :_ff_date_start, :date),
-            (>=, :_ff_date_end, :date)
+            Conditions(<=, est_window_start, "return_date"),
+            Conditions(>=, est_window_end, "return_date")
         ]
     )
 
@@ -284,8 +279,8 @@ function calculate_car(
         crsp_raw,
         [idcol],
         [
-            (<=, Symbol(date_start), :date),
-            (>=, Symbol(date_end), :date)
+            Conditions(<=, date_start, "return_date"),
+            Conditions(>=, date_end, "return_date")
         ]
     )
     # My understanding is the original Fama French subtracted risk free
@@ -321,7 +316,7 @@ function calculate_car(
         )
         nrow(temp_event) == 0 && continue
         df[i, :obs_ff] = nrow(temp_ff)
-        nrow(temp_ff) < ff_est_first.min_est && continue
+        nrow(temp_ff) < ff_est.min_est && continue
         
         rr = reg(temp_ff, f, save=true)
         expected_ret = predict(rr, temp_event)
@@ -340,6 +335,7 @@ function calculate_car(
     ff_est::FFEstMethod;
     date_start::String="dateStart",
     date_end::String="dateEnd",
+    event_date::String="date",
     est_window_start::String="est_window_start",
     est_window_end::String="est_window_end",
     idcol::String="permno",
@@ -353,7 +349,8 @@ function calculate_car(
         date_end,
         est_window_start,
         est_window_end,
-        suppress_warning
+        suppress_warning,
+        event_date
     )
     
     temp = df[:, [idcol, est_window_start, est_window_end]]
@@ -366,7 +363,7 @@ function calculate_car(
         date_start=minimum(temp[:, date_start]),
         date_end=maximum(temp[:, date_end])
     )
-    return car_ff(
+    return calculate_car(
         (crsp_raw, ff_download),
         df,
         ff_est;
@@ -384,6 +381,7 @@ function calculate_car(
     ff_ests::Vector{FFEstMethod};
     date_start::String="dateStart",
     date_end::String="dateEnd",
+    event_date::String="date",
     est_window_start::String="est_window_start",
     est_window_end::String="est_window_end",
     idcol::String="permno",
@@ -392,7 +390,7 @@ function calculate_car(
     df = copy(df)
     out = DataFrame()
     for ff_est in ff_ests
-        temp = car_ff(
+        temp = calculate_car(
             data,
             df,
             ff_est;
@@ -401,9 +399,10 @@ function calculate_car(
             est_window_start,
             est_window_end,
             idcol,
+            event_date,
             suppress_warning
         )
-        temp[!, :ff_method] .= ff_est
+        temp[!, :ff_method] .= repeat([ff_est], nrow(temp))
         if nrow(out) == 0
             out = temp[:, :]
         else

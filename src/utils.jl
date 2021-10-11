@@ -33,6 +33,26 @@ function FFEstMethod(
 end
 
 
+function ff_data(
+    dsn::Union{LibPQ.Connection, DBInterface.Connection};
+    date_start::Date=Date(1926, 7, 1),
+    date_end::Date=today(),
+    cols::Array{String}=[
+        "date",
+        "mktrf",
+        "smb",
+        "hml",
+        "rf",
+        "umd"
+    ]
+)
+    col_str = join(cols, ", ")
+    query = """
+        SELECT $col_str FROM $(default_tables.ff_factors)
+        WHERE date BETWEEN '$date_start' AND '$date_end'
+    """
+    return run_sql_query(dsn, query)
+end
 
 
 parse_date(d) = ismissing(d) ? missing : Date(d)
@@ -46,8 +66,10 @@ function run_sql_query(
         "datadate",
         "namedt",
         "nameenddt",
-        "sdates",
-        "edates"
+        "sdate",
+        "edate",
+        "linkdt",
+        "linkenddt"
     ]
 )
     temp = DBInterface.execute(dsn, q) |> DataFrame
@@ -68,7 +90,8 @@ mutable struct TableDefaults
     crsp_delist::String
     crsp_stocknames::String
     crsp_a_ccm_ccmxpf_lnkhist::String
-    ibes_idsum::String
+    ibes_crsp::String
+    ff_factors::String
 end
 
 
@@ -101,6 +124,9 @@ function Conditions(
         x[3]
     )
 end
+
+buy_hold_return(x) = prod(x .+ 1)
+bhar_calc(firm, market) = buy_hold_return(firm) - buy_hold_return(market)
 
 function range_join(
     df1::DataFrame,
@@ -238,6 +264,7 @@ function range_join(
             drop_col=new_drop
         )
     end
+
     df1 = df1[:, :]
     df2 = df2[:, :]
     df2[!, :_index2] = 1:nrow(df2)
@@ -256,7 +283,7 @@ function range_join(
         repeat([Int[]], nrow(df1))
     end
 
-    Threads.@threads for i in 1:nrow(df1)
+    for i in 1:nrow(df1)
         # looking at the source code for "get", it is just running a try -> catch
         # function, so if I could pre-identify the cases where this will fail
         # I can avoid the try -> catch altogether
@@ -264,15 +291,15 @@ function range_join(
         # results allow me to "skipmissing" in a way
         # I did try testing this with a leftjoin before the loop, on a medium sample
         # (~100,000 rows), it was 4 times slower, so need better method
-        temp = get(
-            gdf,
-            Tuple(df1[i, on1]),
-            0
-        )
-        temp == 0 && continue
+        try
+            temp = gdf[Tuple(df1[i, on1])]
+        catch
+            continue
+        end
 
-        fil = Array{Bool}(undef, nrow(temp))
-        fil .= true
+
+        fil = ones(Bool, nrow(temp))
+
 
         for (j, condition) in enumerate(conditions)
             temp_join = if typeof(join_conditions) <: Symbol
@@ -297,21 +324,23 @@ function range_join(
             end
         end
 
-        temp = temp[fil, :]
+        #temp = temp[fil, :]
 
-        if nrow(temp) > 1 && minimize !== nothing
+        if minimize !== nothing && sum(fil) > 1
+            temp = temp[fil, :]
             for j in 1:length(min1)
 
                 x = argmin(abs.(df1[i, min1[j]] .- temp[:, min2[j]]))
 
                 temp = temp[temp[:, min2[j]] .== temp[x, min2[j]], :]
             end
+            fil = ones(Bool, nrow(temp))
         end
 
-        if nrow(temp) > 0
-            df1[i, :_index2] = temp._index2
-            if validate[2] && nrow(temp) > 1
-                error("More than one match at row $(temp._index2) in df2")
+        if sum(fil) > 0
+            df1[i, :_index2] = temp[fil, :_index2]
+            if validate[2] && sum(fil) > 1
+                error("More than one match at row $(temp[fil, :_index2]) in df2")
             end
         end
 

@@ -25,9 +25,9 @@ using ParallelKMeans
 export link_identifiers, comp_data,
     crsp_data, crsp_market, crsp_stocknames,
     crsp_adjust, crsp_delist,
-    ibesCrspLink, calculate_car, 
+    ibes_crsp_link, calculate_car, 
     range_join, @join, BDay, FFEstMethod,
-    EventWindow, Conditions
+    EventWindow, Conditions, ff_data
 
 ##############################################################################
 ##
@@ -52,7 +52,8 @@ global default_tables = TableDefaults(
     "crsp.dsedelist",
     "crsp.stocknames",
     "crsp_a_ccm.ccmxpf_lnkhist",
-    "ibes.idsum"
+    "wrdsapps.ibcrsphist",
+    "ff.factors_daily"
 )
 
 

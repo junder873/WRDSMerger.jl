@@ -1,64 +1,327 @@
-using WRDSMerger, Test, CSV, DataFrames, Dates
-
-permnos = [87055, 77702, 86525, 12448, 92655]
-date = [Dates.Date(2012, 1, 15), Dates.Date(2015, 6, 30)]
-df = DataFrame(permno=repeat(permnos, 2), date=repeat(date, 5))
-
-data = CSV.File("test\\data\\crsp.csv") |> DataFrame
-market_data = CSV.File("test\\data\\crspm.csv") |> DataFrame
-resh = CSV.File("test\\data\\dailycalc.csv") |> DataFrame
+using SQLite, DataFrames, Dates, Test
+using WRDSMerger
 
 ##
 
-temp = EventWindow.([
-    (BDay(-2, :USNYSE), BDay(2, :USNYSE)),
-    (Day(-2), BDay(2, :USNYSE))
-])
+
+db = SQLite.DB("data\\sql_data.sqlite")
+
+##
+WRDSMerger.default_tables.comp_funda = "'compa.funda'"
+WRDSMerger.default_tables.comp_fundq = "'compa.fundq'"
+WRDSMerger.default_tables.crsp_stocknames = "'crsp.stocknames'"
+WRDSMerger.default_tables.crsp_index = "'crsp.dsi'"
+WRDSMerger.default_tables.crsp_stock_data = "'crsp.dsf'"
+WRDSMerger.default_tables.crsp_delist = "'crsp.dsedelist'"
+WRDSMerger.default_tables.crsp_a_ccm_ccmxpf_lnkhist = "'crsp_a_ccm.ccmxpf_lnkhist'"
+WRDSMerger.default_tables.ibes_crsp = "'wrdsapps.ibcrsphist'"
+WRDSMerger.default_tables.comp_company = "'comp.company'"
+WRDSMerger.default_tables.ff_factors = "'ff.factors_daily'"
+
 ##
 
-res = calculate_car(
-    (data, market_data),
-    df,
-    temp
+df = comp_data(db) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, 2020) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, 2020, 2020) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, Date(2020, 6, 30), 2020) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, Date(2020, 6, 30), Date(2021)) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db; filters=Dict{String, String}()) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, annual=false, cols=["gvkey", "fyearq", "datadate", "fqtr", "saleq"]) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+##
+
+df = comp_data(db, ["001380", "002269"]) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, ["001380", "002269"], 2020) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, ["001380", "002269"], 2020, 2020) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, ["001380", "002269"], Date(2020, 6, 30), 2020) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, ["001380", "002269"], Date(2020, 6, 30), Date(2021)) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, ["001380", "002269"]; filters=Dict{String, String}()) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = comp_data(db, ["001380", "002269"], annual=false, cols=["gvkey", "fyearq", "datadate", "fqtr", "saleq"]) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+
+##
+
+df = crsp_stocknames(db) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_stocknames(db; cols=["permno", "cusip", "ticker"]) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_stocknames(db, ["68389X10", "G2918310"]) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_stocknames(db, ["68389X10", "27828110"], cusip_col="ncusip") |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_stocknames(db, ["68389X10", "27828110"], cols=["permno", "cusip", "ticker"], cusip_col="ncusip") |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_stocknames(db, [10104, 11762]) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_stocknames(db, [10104, 11762], cols=["permno", "cusip", "ticker"]) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_market(db) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_market(db; dateStart=Date(2020)) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_market(db; dateEnd=Date(2020)) |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df = crsp_market(db; col="ewretd") |> dropmissing
+println(size(df))
+@test nrow(df) > 0
+
+df_pull = DataFrame(
+    permno=[10104, 11762],
+    dateStart=[Date(2019), Date(2020)],
+    dateEnd=[Date(2021), Date(2021)]
+)
+df = crsp_data(
+    db,
+    df_pull;
+    pull_method=:optimize,
+) |> dropmissing
+println(size(df))
+@test nrow(df) > 100
+
+df = crsp_data(
+    db,
+    df_pull;
+    pull_method=:minimize,
+) |> dropmissing
+println(size(df))
+@test nrow(df) > 100
+
+df = crsp_data(
+    db,
+    df_pull;
+    pull_method=:stockonly,
+) |> dropmissing
+println(size(df))
+@test nrow(df) > 100
+
+df = crsp_data(
+    db,
+    df_pull;
+    pull_method=:alldata,
+) |> dropmissing
+println(size(df))
+@test nrow(df) > 100
+
+df = crsp_data(
+    db,
+    df_pull;
+    pull_method=:minimize,
+    adjust_crsp_data=false
+) |> dropmissing
+println(size(df))
+@test nrow(df) > 100
+
+df = crsp_data(
+    db,
+    df_pull;
+    pull_method=:minimize,
+    cols=["ret", "askhi", "prc"]
+) |> dropmissing
+println(size(df))
+@test nrow(df) > 100
+
+df = crsp_data(
+    db,
+    Date(2015),
+    Date(2021)
+)
+println(size(df))
+@test nrow(df) > 100
+
+df = crsp_data(
+    db,
+    Date(2015),
+    Date(2021);
+    cols=["ret", "askhi", "prc"]
+)
+println(size(df))
+@test nrow(df) > 100
+
+##
+
+temp = DataFrame(
+    permno=[10104],
+    date=[Date(2020)]
+)
+df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+println(size(df))
+println(df)
+@test nrow(df) > 0
+
+temp = DataFrame(
+    gvkey=["012142"],
+    date=[Date(2020)]
+)
+df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+println(size(df))
+println(df)
+@test nrow(df) > 0
+
+temp = DataFrame(
+    gvkey=[12142],
+    date=[Date(2020)]
+)
+df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+println(size(df))
+println(df)
+@test nrow(df) > 0
+
+temp = DataFrame(
+    cik=[1341439],
+    date=[Date(2020)]
+)
+df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+println(size(df))
+println(df)
+@test nrow(df) > 0
+
+temp = DataFrame(
+    cik=["0001341439"],
+    date=[Date(2020)]
+)
+df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+println(size(df))
+println(df)
+@test nrow(df) > 0
+
+temp = DataFrame(
+    ticker=["ORCL"],
+    date=[Date(2020)]
+)
+df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+println(size(df))
+println(df)
+@test nrow(df) > 0
+
+temp = DataFrame(
+    ticker=["ORCL"],
+    date=[Date(2020)]
+)
+df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true, ibes_ticker_name="ticker", ticker_name="other")
+println(size(df))
+println(df)
+@test nrow(df) > 0
+
+##
+
+temp = DataFrame(
+    permno=[10104, 71563, 79637, 89002, 90993],
+    date=[Date(2020, 12, 1), Date(2020, 12, 20), Date(2020, 7, 3), Date(2020, 9, 30), Date(2020, 10, 15)]
 )
 
-sort!(res, [:permno, :date, :dateStart, :dateEnd])
-sort!(resh)
-select!(res, Not(["car_std", "businessDays", "name", "dateStart", "dateEnd"]))
-dropmissing!(resh)
-dropmissing!(res)
+df = calculate_car(db, temp, EventWindow(BDay(-3, :USNYSE), BDay(3, :USNYSE)))
+println(size(df))
+@test nrow(df) > 0
 
-for col in names(res)
-    if typeof(res[:, col]) <: Array{Float64}
-        @test isapprox(sort(res[:, col]), sort(resh[:, col]))
-    else
-        @test isequal(res[:, col], resh[:, col])
-    end
-end
+
+df = calculate_car(db, temp, EventWindow(BDay(-3, :USNYSE), Month(1)))
+println(size(df))
+@test nrow(df) > 0
+
+
+df = calculate_car(db, temp, (BDay(-3, :USNYSE), Day(3)))
+println(size(df))
+@test nrow(df) > 0
+
+
+df = calculate_car(
+    db,
+    temp,
+    [EventWindow(BDay(-3, :USNYSE), BDay(3, :USNYSE)), EventWindow(BDay(-3, :USNYSE), Month(1))]
+)
+println(size(df))
+@test nrow(df) > 0
+
+crsp_firms = crsp_data(db)
+crsp_market_data = crsp_market(db)
+
+df = calculate_car(
+    (crsp_firms, crsp_market_data),
+    temp,
+    [EventWindow(BDay(-3, :USNYSE), BDay(3, :USNYSE)), EventWindow(BDay(-3, :USNYSE), Month(1))]
+)
+println(size(df))
+@test nrow(df) > 0
+
+df = calculate_car(
+    (crsp_firms, crsp_market_data),
+    temp,
+    (Month(-1), Day(3))
+)
+println(size(df))
+@test nrow(df) > 0
 
 ##
 
-data = CSV.File("test\\data\\crspMonth.csv") |> DataFrame
-market_data = CSV.File("test\\data\\crspmMonth.csv") |> DataFrame
-resh = CSV.File("test\\data\\monthcalc.csv") |> DataFrame
-res = calculate_car(
-    (data, market_data),
-    df,
-    EventWindow.([
-        (Month(-1), Month(2)),
-        (Month(0), Month(2))
-    ])
-)
-sort!(res, [:permno, :date, :dateStart, :dateEnd])
-sort!(resh)
-select!(res, Not(["car_std", "businessDays", "name", "dateStart", "dateEnd"]))
-dropmissing!(resh)
-dropmissing!(res)
+ff = FFEstMethod(event_window=EventWindow(BDay(-3, :USNYSE), BDay(3, :USNYSE)))
+ff2 = FFEstMethod(event_window=EventWindow(Day(-5), BDay(3, :USNYSE)))
 
-for col in names(res)
-    if typeof(res[:, col]) <: Array{Float64}
-        @test isapprox(sort(res[:, col]), sort(resh[:, col]))
-    else
-        @test isequal(res[:, col], resh[:, col])
-    end
-end
+df = calculate_car(db, temp, ff)
+println(size(df))
+@test nrow(df) > 0
+
+ff_market_data = WRDSMerger.ff_data(db)
+
+df = calculate_car((crsp_firms, ff_market_data), temp, [ff, ff2])
+println(size(df))
+@test nrow(df) > 0

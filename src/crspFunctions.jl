@@ -382,8 +382,8 @@ Downloads all crsp stock data between the start and end date.
 """
 function crsp_data(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
-    s::Date,
-    e::Date;
+    s::Date=Date(1925),
+    e::Date=today();
     cols = ["ret", "vol", "shrout"],
     adjust_crsp_data::Bool=true
 )

@@ -59,18 +59,18 @@ end
 
 function ibes_crsp_link(
     dsn::Union{LibPQ.Connection, DBInterface.Connection};
-    cols::Vector{String}=["ticker", "permno", "sdates", "edates", "score"],
+    cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
     filter_score::Int=4 # maximum of 6
 )
     col_str = join(cols, ", ")
     query = """
-        SELECT DISTINCT $col_str FROM wrdsapps.ibcrsphist
+        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
         WHERE score <= $filter_score
         AND permno IS NOT NULL
     """
     df = run_sql_query(dsn, query)
-    if "edates" ∈ names(df)
-        df[!, "edates"] = coalesce.(df[:, "edates"], Dates.today())
+    if "edate" ∈ names(df)
+        df[!, "edate"] = coalesce.(df[:, "edate"], Dates.today())
     end
     return df
 end
@@ -78,7 +78,7 @@ end
 function ibes_crsp_link(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     tickers::Vector{String};
-    cols::Vector{String}=["ticker", "permno", "sdates", "edates", "score"],
+    cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
     filter_score::Int=4 # maximum of 6
 )
     if length(tickers) == 0 || length(tickers) > 1000
@@ -89,22 +89,22 @@ function ibes_crsp_link(
     fil = "('" * join(tickers, "', '") * "')"
 
     query = """
-        SELECT DISTINCT $col_str FROM wrdsapps.ibcrsphist
+        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
         WHERE score <= $filter_score
         AND permno IS NOT NULL
         AND ticker IN $fil
     """
     df = run_sql_query(dsn, query)
-    if "edates" ∈ names(df)
-        df[!, "edates"] = coalesce.(df[:, "edates"], Dates.today())
+    if "edate" ∈ names(df)
+        df[!, "edate"] = coalesce.(df[:, "edate"], Dates.today())
     end
     return df
 end
 
 function ibes_crsp_link(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
-    permno::Vector{Number};
-    cols::Vector{String}=["ticker", "permno", "sdates", "edates", "score"],
+    permno::Vector{<:Number};
+    cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
     filter_score::Int=4 # maximum of 6
 )
     if length(permno) == 0 || length(permno) > 1000
@@ -115,14 +115,14 @@ function ibes_crsp_link(
     fil = "(" * join(permno, ", ") * ")"
 
     query = """
-        SELECT DISTINCT $col_str FROM wrdsapps.ibcrsphist
+        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
         WHERE score <= $filter_score
         AND permno IS NOT NULL
         AND permno IN $fil
     """
     df = run_sql_query(dsn, query)
-    if "edates" ∈ names(df)
-        df[!, "edates"] = coalesce.(df[:, "edates"], Dates.today())
+    if "edate" ∈ names(df)
+        df[!, "edate"] = coalesce.(df[:, "edate"], Dates.today())
     end
     return df
 end
@@ -328,13 +328,13 @@ function link_identifiers(
             ibes_to_crsp,
             ["ibes_ticker" => "ticker"],
             [
-                Conditions(<=, datecol, "edates"),
-                Conditions(>=, datecol, "sdates")
+                Conditions(<=, datecol, "edate"),
+                Conditions(>=, datecol, "sdate")
             ],
             validate=(false, true),
             minimize=["score" => "_temp_min"]
         )
-        select!(df, Not(["sdates", "edates", "_temp_min"]))
+        select!(df, Not(["sdate", "edate", "_temp_min"]))
         if any([cusip, ncusip, gvkey, cik])
             temp = link_identifiers(
                 dsn,
@@ -364,13 +364,15 @@ function link_identifiers(
             on=["cik"],
             validate=(false, true)
         )
-        if any([permno, cusip, ncusip])
+        if any([permno, cusip, ncusip, ticker, ibes_ticker])
             comp = link_identifiers(
                 dsn,
                 df[:, ["gvkey", datecol]] |> dropmissing |> unique;
                 permno,
                 cusip,
                 ncusip,
+                ticker,
+                ibes_ticker,
                 datecol
             )
             df = leftjoin(
@@ -523,19 +525,20 @@ function link_identifiers(
                 dsn,
                 df[:, "permno"];
             )
+            rename!(ibes_to_crsp, "ticker" => "ibes_ticker")
             df[!, :_temp_min] .= 0
             df = range_join(
                 df,
                 ibes_to_crsp,
                 ["permno"],
                 [
-                    Conditions(<=, datecol, "edates"),
-                    Conditions(>=, datecol, "sdates")
+                    Conditions(<=, datecol, "edate"),
+                    Conditions(>=, datecol, "sdate")
                 ];
                 validate=(false, true),
                 minimize=["score" => "_temp_min"]
             )
-            select!(df, Not(["sdates", "edates", "_temp_min"]))
+            select!(df, Not(["sdate", "edate", "_temp_min"]))
         end
     end
 
