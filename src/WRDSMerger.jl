@@ -10,8 +10,6 @@ using Dates
 using BusinessDays
 using Statistics
 using FixedEffectModels
-using StringDistances
-using CSV
 using LibPQ
 using DBInterface
 using ParallelKMeans
