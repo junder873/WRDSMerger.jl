@@ -7,16 +7,16 @@ using WRDSMerger
 db = SQLite.DB("data\\sql_data.sqlite")
 
 ##
-WRDSMerger.default_tables.comp_funda = "'compa.funda'"
-WRDSMerger.default_tables.comp_fundq = "'compa.fundq'"
-WRDSMerger.default_tables.crsp_stocknames = "'crsp.stocknames'"
-WRDSMerger.default_tables.crsp_index = "'crsp.dsi'"
-WRDSMerger.default_tables.crsp_stock_data = "'crsp.dsf'"
-WRDSMerger.default_tables.crsp_delist = "'crsp.dsedelist'"
-WRDSMerger.default_tables.crsp_a_ccm_ccmxpf_lnkhist = "'crsp_a_ccm.ccmxpf_lnkhist'"
-WRDSMerger.default_tables.ibes_crsp = "'wrdsapps.ibcrsphist'"
-WRDSMerger.default_tables.comp_company = "'comp.company'"
-WRDSMerger.default_tables.ff_factors = "'ff.factors_daily'"
+WRDSMerger.default_tables.comp_funda = "compa_funda"
+WRDSMerger.default_tables.comp_fundq = "compa_fundq"
+WRDSMerger.default_tables.crsp_stocknames = "crsp_stocknames"
+WRDSMerger.default_tables.crsp_index = "crsp_dsi"
+WRDSMerger.default_tables.crsp_stock_data = "crsp_dsf"
+WRDSMerger.default_tables.crsp_delist = "crsp_dsedelist"
+WRDSMerger.default_tables.crsp_a_ccm_ccmxpf_lnkhist = "crsp_a_ccm_ccmxpf_lnkhist"
+WRDSMerger.default_tables.ibes_crsp = "wrdsapps_ibcrsphist"
+WRDSMerger.default_tables.comp_company = "comp_company"
+WRDSMerger.default_tables.ff_factors = "ff_factors_daily"
 
 ##
 
