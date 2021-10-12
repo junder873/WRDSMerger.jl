@@ -46,8 +46,8 @@ function calculate_car(
         crsp,
         [idcol],
         [
-            Condition(<=, date_start, :retDate),
-            Condition(>=, date_end, :retDate)
+            Conditions(<=, date_start, :retDate),
+            Conditions(>=, date_end, :retDate)
         ]
     )
 
@@ -114,10 +114,7 @@ function calculate_car(
     ret_period::Tuple{<:DatePeriod, <:DatePeriod};
     date::String="date",
     idcol::String="permno",
-    market_return::String="vwretd",
-    table_firm::String="crsp.dsf",
-    table_delist::String="crsp.dsedelist",
-    table_market::String="crsp.dsi"
+    market_return::String="vwretd"
 )
     calculate_car(
         dsn,
@@ -125,10 +122,7 @@ function calculate_car(
         EventWindow(ret_period);
         date,
         idcol,
-        market_return,
-        table_firm,
-        table_market,
-        table_delist
+        market_return
     )
 end
 
@@ -138,10 +132,7 @@ function calculate_car(
     ret_period::EventWindow;
     date::String="date",
     idcol::String="permno",
-    market_return::String="vwretd",
-    table_firm::String="crsp.dsf",
-    table_delist::String="crsp.dsedelist",
-    table_market::String="crsp.dsi"
+    market_return::String="vwretd"
 )
     df = copy(df)
     
@@ -154,10 +145,7 @@ function calculate_car(
         date_start="dateStart",
         date_end="dateEnd",
         idcol,
-        market_return,
-        table_firm,
-        table_market,
-        table_delist
+        market_return
     )
 end
 
@@ -167,21 +155,17 @@ function calculate_car(
     date_start::String="dateStart",
     date_end::String="dateEnd",
     idcol::String="permno",
-    market_return::String = "vwretd",
-    table_firm::String="crsp.dsf",
-    table_delist::String="crsp.dsedelist",
-    table_market::String="crsp.dsi"
+    market_return::String = "vwretd"
 )
     df = copy(df)
 
 
-    crsp = crsp_data(dsn, df; date_start, date_end, table=table_firm, table_delist)
+    crsp = crsp_data(dsn, df; date_start, date_end)
     crspM = crsp_market(
         dsn,
         dateStart = minimum(df[:, date_start]),
         dateEnd = maximum(df[:, date_end]),
-        col = market_return,
-        table=table_market
+        col = market_return
     )
     return calculate_car((crsp, crspM), df; date_start, date_end, idcol)
 end
@@ -220,9 +204,6 @@ function calculate_car(
     date::String="date",
     idcol::String="permno",
     market_return::String="vwretd",
-    table_firm::String="crsp.dsf",
-    table_delist::String="crsp.dsedelist",
-    table_market::String="crsp.dsi"
 )
     
     df = copy(df)
@@ -240,14 +221,13 @@ function calculate_car(
     gdf = groupby(df_temp, [idcol, date])
     df_temp = combine(gdf, "dateStart" => minimum => "dateStart", "dateEnd" => maximum => "dateEnd")
 
-    crsp = crsp_data(dsn, df_temp; table=table_firm, table_delist)
+    crsp = crsp_data(dsn, df_temp)
 
     crspM = crsp_market(
         dsn,
         dateStart = minimum(df_temp[:, :dateStart]),
         dateEnd = maximum(df_temp[:, :dateEnd]),
         col = market_return,
-        table=table_market
     )
 
     return calculate_car((crsp, crspM), df, ret_periods; date=date, idcol=idcol, market_return=market_return)
@@ -275,8 +255,7 @@ function calculate_car(
         date_end,
         est_window_start,
         est_window_end,
-        suppress_warning,
-        event_date
+        suppress_warning
     )
     crsp_raw = leftjoin(
         crsp_raw,
@@ -290,8 +269,8 @@ function calculate_car(
         crsp_raw,
         [idcol],
         [
-            Condition(<=, est_window_start, "return_date"),
-            Condition(>=, est_window_end, "return_date")
+            Conditions(<=, est_window_start, "return_date"),
+            Conditions(>=, est_window_end, "return_date")
         ]
     )
 
@@ -300,8 +279,8 @@ function calculate_car(
         crsp_raw,
         [idcol],
         [
-            Condition(<=, date_start, "return_date"),
-            Condition(>=, date_end, "return_date")
+            Conditions(<=, date_start, "return_date"),
+            Conditions(>=, date_end, "return_date")
         ]
     )
     # My understanding is the original Fama French subtracted risk free
@@ -360,10 +339,7 @@ function calculate_car(
     est_window_start::String="est_window_start",
     est_window_end::String="est_window_end",
     idcol::String="permno",
-    suppress_warning::Bool=false,
-    table_firm::String="crsp.dsf",
-    table_delist::String="crsp.dsedelist",
-    table_market::String="ff.factors_daily"
+    suppress_warning::Bool=false
 )
     df = copy(df)
 
@@ -381,12 +357,11 @@ function calculate_car(
     rename!(temp, est_window_start => date_start, est_window_end => date_end)
     temp = vcat(temp, df[:, [idcol, date_start, date_end]]) |> unique
 
-    crsp_raw = crsp_data(dsn, temp; date_start, date_end, table=table_firm, table_delist)
+    crsp_raw = crsp_data(dsn, temp; date_start, date_end)
     ff_download = ff_data(
         dsn;
         date_start=minimum(temp[:, date_start]),
-        date_end=maximum(temp[:, date_end]),
-        table=table_market
+        date_end=maximum(temp[:, date_end])
     )
     return calculate_car(
         (crsp_raw, ff_download),

@@ -1,12 +1,11 @@
 function compustatCrspLink(
     dsn;
-    cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"],
-    table::String="crsp_a_ccm.ccmxpf_lnkhist"
+    cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"]
 )
     col_str = join(cols, ", ")
     query = """
         select distinct $col_str
-        from $table
+        from $(default_tables.crsp_a_ccm_ccmxpf_lnkhist)
         where lpermno IS NOT NULL AND
         linktype in ('LU', 'LC') AND
         linkprim in ('P', 'C')       
@@ -26,11 +25,10 @@ function compustatCrspLink(
     dsn,
     vals;
     id_col::String="gvkey", # either "gvkey" or "lpermno"
-    cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"],
-    table::String="crsp_a_ccm.ccmxpf_lnkhist"
+    cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"]
 )
     if length(vals) == 0 || length(vals) > 1000
-        return compustatCrspLink(dsn; cols, table)
+        return compustatCrspLink(dsn; cols)
     end
     if id_col == "permno"
         id_col = "lpermno"
@@ -43,7 +41,7 @@ function compustatCrspLink(
     end
     query = """
         select distinct $col_str
-        from $table
+        from $(default_tables.crsp_a_ccm_ccmxpf_lnkhist)
         where lpermno IS NOT NULL AND
         linktype in ('LU', 'LC') AND
         linkprim in ('P', 'C') AND
@@ -62,12 +60,11 @@ end
 function ibes_crsp_link(
     dsn::Union{LibPQ.Connection, DBInterface.Connection};
     cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
-    filter_score::Int=4, # maximum of 6
-    table::String="wrdsapps.ibcrsphist"
+    filter_score::Int=4 # maximum of 6
 )
     col_str = join(cols, ", ")
     query = """
-        SELECT DISTINCT $col_str FROM $table
+        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
         WHERE score <= $filter_score
         AND permno IS NOT NULL
     """
@@ -82,18 +79,17 @@ function ibes_crsp_link(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     tickers::Vector{String};
     cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
-    filter_score::Int=4, # maximum of 6
-    table::String="wrdsapps.ibcrsphist"
+    filter_score::Int=4 # maximum of 6
 )
     if length(tickers) == 0 || length(tickers) > 1000
-        return ibes_crsp_link(dsn; cols, filter_score, table)
+        return ibes_crsp_link(dsn; cols, filter_score)
     end
 
     col_str = join(cols, ", ")
     fil = "('" * join(tickers, "', '") * "')"
 
     query = """
-        SELECT DISTINCT $col_str FROM $table
+        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
         WHERE score <= $filter_score
         AND permno IS NOT NULL
         AND ticker IN $fil
@@ -109,18 +105,17 @@ function ibes_crsp_link(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     permno::Vector{<:Number};
     cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
-    filter_score::Int=4, # maximum of 6
-    table::String="wrdsapps.ibcrsphist"
+    filter_score::Int=4 # maximum of 6
 )
     if length(permno) == 0 || length(permno) > 1000
-        return ibes_crsp_link(dsn; cols, filter_score, table)
+        return ibes_crsp_link(dsn; cols, filter_score)
     end
 
     col_str = join(cols, ", ")
     fil = "(" * join(permno, ", ") * ")"
 
     query = """
-        SELECT DISTINCT $col_str FROM $table
+        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
         WHERE score <= $filter_score
         AND permno IS NOT NULL
         AND permno IN $fil
@@ -134,11 +129,10 @@ end
 
 function cik_to_gvkey(
     dsn::Union{LibPQ.Connection, DBInterface.Connection};
-    cols::Array{String}=["gvkey", "cik"],
-    table::String="comp.company"
+    cols::Array{String}=["gvkey", "cik"]
 )
     colString = join(cols, ", ")
-    query = "SELECT DISTINCT $colString FROM $table WHERE cik IS NOT NULL"
+    query = "SELECT DISTINCT $colString FROM $(default_tables.comp_company) WHERE cik IS NOT NULL"
     return run_sql_query(dsn, query) |> DataFrame
 end
 
@@ -146,18 +140,17 @@ function cik_to_gvkey(
     dsn,
     vals::Array{String};
     id_col::String="cik", # either "cik" or "gvkey"
-    cols::Array{String}=["gvkey", "cik"],
-    table::String="comp.company"
+    cols::Array{String}=["gvkey", "cik"]
 )
     if length(vals) == 0 || length(vals) > 1000
-        return cik_to_gvkey(dsn; cols, table)
+        return cik_to_gvkey(dsn; cols)
     end
 
     colString = join(cols, ", ")
     fil_str = join(unique(vals), "', '")
     query = """
         SELECT DISTINCT $colString
-        FROM $table
+        FROM $(default_tables.comp_company)
         WHERE cik IS NOT NULL
         AND $id_col IN ('$(fil_str)')
     """
@@ -169,10 +162,9 @@ function join_permno_gvkey(
     df::DataFrame;
     id_col::String="gvkey",
     forceUnique::Bool=false,
-    datecol::String="date",
-    table::String="crsp_a_ccm.ccmxpf_lnkhist",
+    datecol::String="date"
 )
-    comp = unique(compustatCrspLink(dsn, df[:, id_col] |> unique; id_col, table))
+    comp = unique(compustatCrspLink(dsn, df[:, id_col] |> unique; id_col))
 
     comp[!, :linkdt] = coalesce.(comp[:, :linkdt], minimum(df[:, datecol]))
 
@@ -241,11 +233,7 @@ function link_identifiers(
     permno_name::String="permno",
     ncusip_name::String="ncusip",
     ticker_name::String="ticker",
-    ibes_ticker_name::String="ibes_ticker",
-    crsp_stocknames_table::String="crsp.stocknames",
-    comp_company_table::String="comp.company",
-    crsp_comp_link_table::String="crsp_a_ccm.ccmxpf_lnkhist",
-    ib_crsp_link_table::String="wrdsapps.ibcrsphist"
+    ibes_ticker_name::String="ibes_ticker"
 
 )
     df = copy(df)
@@ -333,7 +321,6 @@ function link_identifiers(
         ibes_to_crsp = ibes_crsp_link(
             dsn,
             df[:, "ibes_ticker"];
-            table=ib_crsp_link_table
         )
         df[!, :_temp_min] .= 0 # to use the minimize function in the range join
         df = range_join(
@@ -341,8 +328,8 @@ function link_identifiers(
             ibes_to_crsp,
             ["ibes_ticker" => "ticker"],
             [
-                Condition(<=, datecol, "edate"),
-                Condition(>=, datecol, "sdate")
+                Conditions(<=, datecol, "edate"),
+                Conditions(>=, datecol, "sdate")
             ],
             validate=(false, true),
             minimize=["score" => "_temp_min"]
@@ -356,11 +343,7 @@ function link_identifiers(
                 ncusip,
                 gvkey,
                 cik,
-                datecol,
-                crsp_stocknames_table,
-                ib_crsp_link_table,
-                comp_company_table,
-                crsp_comp_link_table
+                datecol
             )
             df = leftjoin(
                 df,
@@ -374,12 +357,12 @@ function link_identifiers(
 
     # cik is only easy to link to gvkey, so that must come first
     if identifying_col == "cik"
-        cik_gvkey = cik_to_gvkey(dsn, unique(df[:, "cik"]); id_col="cik", table=comp_company_table)
+        cik_gvkey = cik_to_gvkey(dsn, unique(df[:, "cik"]); id_col="cik")
         df = leftjoin(
             df,
             cik_gvkey,
             on=["cik"],
-            validate=(false, true),
+            validate=(false, true)
         )
         if any([permno, cusip, ncusip, ticker, ibes_ticker])
             comp = link_identifiers(
@@ -390,11 +373,7 @@ function link_identifiers(
                 ncusip,
                 ticker,
                 ibes_ticker,
-                datecol,
-                crsp_stocknames_table,
-                ib_crsp_link_table,
-                comp_company_table,
-                crsp_comp_link_table
+                datecol
             )
             df = leftjoin(
                 df,
@@ -413,8 +392,7 @@ function link_identifiers(
             df;
             forceUnique,
             id_col="gvkey",
-            datecol,
-            table=crsp_comp_link_table
+            datecol
         )
         df = leftjoin(
             df,
@@ -430,11 +408,7 @@ function link_identifiers(
                 cusip,
                 ticker,
                 ibes_ticker,
-                datecol,
-                crsp_stocknames_table,
-                ib_crsp_link_table,
-                comp_company_table,
-                crsp_comp_link_table
+                datecol
             )
             df = leftjoin(
                 df,
@@ -449,7 +423,7 @@ function link_identifiers(
     # If gvkey and need cik
     if identifying_col == "gvkey" && cik
         temp = dropmissing(df[:, ["gvkey"]])
-        cik_gvkey = cik_to_gvkey(dsn, temp[:, "gvkey"]; id_col="gvkey", table=comp_company_table)
+        cik_gvkey = cik_to_gvkey(dsn, temp[:, "gvkey"]; id_col="gvkey")
         dropmissing!(cik_gvkey)
         df = leftjoin(
             df,
@@ -467,7 +441,6 @@ function link_identifiers(
             dsn,
             df[:, identifying_col] |> unique;
             cusip_col=identifying_col,
-            table=crsp_stocknames_table
         )
         crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
         crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
@@ -489,11 +462,7 @@ function link_identifiers(
                 cik,
                 gvkey,
                 ibes_ticker,
-                datecol,
-                crsp_stocknames_table,
-                ib_crsp_link_table,
-                comp_company_table,
-                crsp_comp_link_table
+                datecol
             )
             df = leftjoin(
                 df,
@@ -512,7 +481,6 @@ function link_identifiers(
             crsp = crsp_stocknames(
                 dsn,
                 df[:, identifying_col] |> unique;
-                table=crsp_stocknames_table
             )
             crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
             crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
@@ -534,19 +502,14 @@ function link_identifiers(
                 df;
                 forceUnique,
                 id_col="permno",
-                datecol,
-                table=crsp_comp_link_table
+                datecol
             )
             if cik
                 comp = link_identifiers(
                     dsn,
                     df[:, ["gvkey", datecol]] |> dropmissing |> unique;
                     datecol,
-                    cik,
-                    crsp_stocknames_table,
-                    ib_crsp_link_table,
-                    comp_company_table,
-                    crsp_comp_link_table
+                    cik
                 )
                 df = leftjoin(
                     df,
@@ -561,7 +524,6 @@ function link_identifiers(
             ibes_to_crsp = ibes_crsp_link(
                 dsn,
                 df[:, "permno"];
-                table=ib_crsp_link_table
             )
             rename!(ibes_to_crsp, "ticker" => "ibes_ticker")
             df[!, :_temp_min] .= 0
@@ -570,8 +532,8 @@ function link_identifiers(
                 ibes_to_crsp,
                 ["permno"],
                 [
-                    Condition(<=, datecol, "edate"),
-                    Condition(>=, datecol, "sdate")
+                    Conditions(<=, datecol, "edate"),
+                    Conditions(>=, datecol, "sdate")
                 ];
                 validate=(false, true),
                 minimize=["score" => "_temp_min"]

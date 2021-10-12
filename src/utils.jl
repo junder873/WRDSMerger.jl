@@ -44,12 +44,11 @@ function ff_data(
         "hml",
         "rf",
         "umd"
-    ],
-    table="ff.factors_daily"
+    ]
 )
     col_str = join(cols, ", ")
     query = """
-        SELECT $col_str FROM $table
+        SELECT $col_str FROM $(default_tables.ff_factors)
         WHERE date BETWEEN '$date_start' AND '$date_end'
     """
     return run_sql_query(dsn, query)
@@ -82,34 +81,26 @@ function run_sql_query(
     return temp
 end
 
+mutable struct TableDefaults
+    comp_funda::String
+    comp_fundq::String
+    comp_company::String
+    crsp_stock_data::String
+    crsp_index::String
+    crsp_delist::String
+    crsp_stocknames::String
+    crsp_a_ccm_ccmxpf_lnkhist::String
+    ibes_crsp::String
+    ff_factors::String
+end
+
+
     
 
-struct Condition
+struct Conditions
     fun::Function
     l::Union{Symbol, String}
     r::Union{Symbol, String}
-end
-
-function Condition(
-    l::Union{Symbol, String},
-    fun::Function,
-    r::Union{Symbol, String}
-)
-    Condition(
-        fun,
-        l,
-        r
-    )
-end
-
-function Condition(
-    x::Tuple{Function, Symbol, Symbol}
-)
-    Condition(
-        x[1],
-        x[2],
-        x[3]
-    )
 end
 
 function Conditions(
@@ -151,7 +142,7 @@ function range_join(
         df1,
         df2,
         on,
-        Condition.(conditions);
+        Conditions.(conditions);
         minimize,
         join_conditions,
         validate,
@@ -230,7 +221,7 @@ function range_join(
     df1::DataFrame,
     df2::DataFrame,
     on,
-    conditions::Array{Condition};
+    conditions::Array{Conditions};
     minimize=nothing,
     join_conditions::Union{Array{Symbol}, Symbol}=:and,
     validate::Tuple{Bool, Bool}=(false, false),
@@ -242,9 +233,9 @@ function range_join(
         # the faster it is overall, if they are about equal
         # this likely slows things down, but it is
         # significantly faster if it is flipped for large sets
-        new_cond = Condition[]
+        new_cond = Conditions[]
         for con in conditions
-            push!(new_cond, Condition(change_function(con.fun), con.r, con.l))
+            push!(new_cond, Conditions(change_function(con.fun), con.r, con.l))
         end
         on1, on2 = parse_ons(on)
         if minimize !== nothing

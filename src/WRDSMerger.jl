@@ -25,7 +25,7 @@ export link_identifiers, comp_data,
     crsp_adjust, crsp_delist,
     ibes_crsp_link, calculate_car, 
     range_join, @join, BDay, FFEstMethod,
-    EventWindow, Condition, ff_data
+    EventWindow, Conditions, ff_data
 
 ##############################################################################
 ##
@@ -39,6 +39,20 @@ include("calcFunctions.jl")
 include("compFunctions.jl")
 include("mergeFunctions.jl")
 include("date_functions.jl")
+
+
+global default_tables = TableDefaults(
+    "compa.funda",
+    "compa.fundq",
+    "comp.company",
+    "crsp.dsf",
+    "crsp.dsi",
+    "crsp.dsedelist",
+    "crsp.stocknames",
+    "crsp_a_ccm.ccmxpf_lnkhist",
+    "wrdsapps.ibcrsphist",
+    "ff.factors_daily"
+)
 
 
 end # module

@@ -49,7 +49,7 @@ function comp_data(
     gvkeys::AbstractArray{String},
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
-    table::String="compa.funda",
+    annual::Bool=true,
     filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
         "datafmt" => "STD",
         "indfmt" => "INDL",
@@ -65,12 +65,13 @@ function comp_data(
         dateEnd = Dates.Date(dateEnd, 12, 31)
     end
 
+    tab = annual ? default_tables.comp_funda : default_tables.comp_fundq
 
     colString = join(cols, ", ")
     filterString = createFilter(filters)
     gvkey_str = "('" * join(gvkeys, "', '") * "')"
     query = """
-        SELECT $colString FROM $table
+        SELECT $colString FROM $tab
         WHERE datadate BETWEEN '$(dateStart)' and '$(dateEnd)'
         AND gvkey IN $gvkey_str $filterString
         """
@@ -107,14 +108,14 @@ function comp_data(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
-    table::String="compa.funda",
+    annual::Bool=true,
     filters::Union{Dict{String,String},Dict{String,Array{String}}}=Dict(
         "datafmt" => "STD",
         "indfmt" => "INDL",
         "consol" => "C",
         "popsrc" => "D"
     ),
-    cols::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"],
+    cols::Array{String}=["gvkey", "datadate", "fyear", "sale", "revt", "xopr"]
 )
     
     if typeof(dateStart) == Int
@@ -124,11 +125,13 @@ function comp_data(
         dateEnd = Dates.Date(dateEnd, 12, 31)
     end
 
+    tab = annual ? default_tables.comp_funda : default_tables.comp_fundq
+
     colString = join(cols, ", ")
     filterString = createFilter(filters)
     query = """
         select $colString
-        from $table
+        from $tab
         where datadate between '$dateStart' and '$dateEnd' $filterString
     """
     
