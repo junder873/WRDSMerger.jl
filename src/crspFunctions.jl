@@ -10,13 +10,14 @@ Download all crsp.stockname data (with non-missing ncusip), expects a case of a 
 """
 function crsp_stocknames(
     dsn::Union{LibPQ.Connection, DBInterface.Connection};
-    cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"]
+    cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
+    table::String="crsp.stocknames"
 )
     col_str = join(cols, ", ")
 
     query = """
         SELECT DISTINCT $col_str
-        FROM $(default_tables.crsp_stocknames)
+        FROM $table
         WHERE ncusip != ''
     """
     return run_sql_query(dsn, query) |> DataFrame
@@ -41,6 +42,7 @@ function crsp_stocknames(
     cusip::Array{String};
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
     cusip_col="cusip", # either "cusip" "ncusip" or "ticker"
+    table::String="crsp.stocknames"
 )
     if cusip_col ∉ ["cusip", "ncusip", "ticker"]
         @error("`cusip_col` must be one of \"cusip\", \"ncusip\" or \"ticker\"")
@@ -53,7 +55,7 @@ function crsp_stocknames(
 
     query = """
         SELECT DISTINCT $col_str
-        FROM $(default_tables.crsp_stocknames)
+        FROM $table
         WHERE ncusip != ''
         AND $cusip_col IN ('$(fil_str)')
     """
@@ -76,6 +78,7 @@ function crsp_stocknames(
     dsn::Union{LibPQ.Connection, DBInterface.Connection},
     permno::Array{<:Number};
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
+    table::String="crsp.stocknames"
 )
     if length(permno) == 0 || length(permno) > 1000
         return crsp_stocknames(dsn; cols)
@@ -85,7 +88,7 @@ function crsp_stocknames(
 
     query = """
         SELECT DISTINCT $col_str
-        FROM $(default_tables.crsp_stocknames)
+        FROM $table
         WHERE ncusip != ''
         AND permno IN ($(fil_str))
     """
@@ -115,7 +118,8 @@ function crsp_market(
     dsn::Union{LibPQ.Connection, DBInterface.Connection};
     dateStart = Dates.Date(1925, 1, 1),
     dateEnd = Dates.today(),
-    col = "vwretd"
+    col = "vwretd",
+    table::String="crsp.dsi"
     )
 
     cols = if typeof(col) <: String
@@ -130,7 +134,7 @@ function crsp_market(
 
     query = """
                         select $col_str
-                        from $(default_tables.crsp_index)
+                        from $table
                         where date between '$dateStart' and '$dateEnd'
                         """
     crsp = run_sql_query(dsn, query) |> DataFrame;
@@ -289,7 +293,9 @@ function crsp_data(
     pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
     date_start::String="dateStart",
     date_end::String="dateEnd",
-    adjust_crsp_data::Bool=true
+    adjust_crsp_data::Bool=true,
+    table::String="crsp.dsf",
+    table_delist::String="crsp.dsedelist"
 )
     df = df[:, :]
     for col in ["permno", date_start, date_end]
@@ -310,7 +316,7 @@ function crsp_data(
 
     colString = join(cols, ", ")
     
-    query = "SELECT $colString FROM $(default_tables.crsp_stock_data) WHERE "
+    query = "SELECT $colString FROM $table WHERE "
 
     if pull_method == :optimize
         df[!, :date_val] = Float64.(Dates.value.(df[:, date_start]))
@@ -360,7 +366,7 @@ function crsp_data(
 
     crsp = run_sql_query(dsn, query) |> DataFrame
     if adjust_crsp_data
-        crsp = crsp_adjust(dsn, crsp)
+        crsp = crsp_adjust(dsn, crsp; table=table_delist)
     end
     return crsp
 end
@@ -385,7 +391,9 @@ function crsp_data(
     s::Date=Date(1925),
     e::Date=today();
     cols = ["ret", "vol", "shrout"],
-    adjust_crsp_data::Bool=true
+    adjust_crsp_data::Bool=true,
+    table::String="crsp.dsi",
+    table_delist::String="crsp.dsedelist"
 )
     for col in ["permno", "date"]
         if col ∉ cols
@@ -397,12 +405,12 @@ function crsp_data(
 
     query = """
         select $colString
-        from $(default_tables.crsp_stock_data)
+        from $table
         where date between '$(s)' and '$(e)'
     """
     crsp = run_sql_query(dsn, query) |> DataFrame
     if adjust_crsp_data
-        crsp = crsp_adjust(dsn, crsp)
+        crsp = crsp_adjust(dsn, crsp; table=table_delist)
     end
     return crsp
 end
@@ -424,18 +432,19 @@ Fetches the CRSP delist dataset, typically for the returns
 on the day of delisting.
 """
 function crsp_delist(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection};
+    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    date_start::Date=Date(1926),
+    date_end::Date=today();
     cols::Array{String}=[
         "permno",
         "dlstdt",
         "dlret"
     ],
-    date_start::Date=Date(1926),
-    date_end::Date=today()
+    table::String="crsp.dsedelist"
 )
     col_str = join(cols, ", ")
     query = """
-    SELECT $col_str FROM $(default_tables.crsp_delist)
+    SELECT $col_str FROM $table
     WHERE dlret IS NOT NULL
     AND dlret != 0
     AND dlstdt BETWEEN '$date_start' AND '$date_end'
@@ -490,7 +499,8 @@ function crsp_adjust(
     shrout_col::String="shrout",
     shrout_splits_col::String="cfacshr",
     adjusted_shrout_col::String="shrout_adj",
-    ret_col::String="ret"
+    ret_col::String="ret",
+    table::String="crsp.dsedelist"
 )
     df = copy(df)
     if adjust_prc_negatives && prc_col ∈ names(df)
@@ -507,9 +517,10 @@ function crsp_adjust(
 
     if adjust_delist && ret_col ∈ names(df)
         delist_ret = crsp_delist(
-            dsn;
-            date_start=minimum(df[:, date]),
-            date_end=maximum(df[:, date])
+            dsn,
+            minimum(df[:, date]),
+            maximum(df[:, date]);
+            table
         ) |> dropmissing |> unique
         df = leftjoin(
             df,
