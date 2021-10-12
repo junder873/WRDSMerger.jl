@@ -4,7 +4,7 @@ using WRDSMerger
 ##
 
 
-db = SQLite.DB("data\\sql_data.sqlite")
+db = SQLite.DB(joinpath("data", "sql_data.sqlite"))
 
 ##
 WRDSMerger.default_tables.comp_funda = "compa_funda"
