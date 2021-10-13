@@ -1,17 +1,4 @@
 
-# function calculate_car(
-#     df::AbstractDataFrame;
-#     date_start::String="dateStart",
-#     date_end::String="dateEnd",
-#     idcol::String="permno",
-#     market_return::String="vwretd",
-#     out_cols=[
-#         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-#         ["car"] .=> std
-#     ],
-#     data::Union{LibPQ.Connection, Tuple{DataFrame, DataFrame}}=(DataFrame(), DataFrame())
-# )
-
 function calculate_car(
     data::Tuple{AbstractDataFrame, AbstractDataFrame},
     df::AbstractDataFrame;
@@ -21,8 +8,9 @@ function calculate_car(
     market_return::String="vwretd",
     out_cols=[
         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar"
+        ["car", "ret"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+        ["ret"] .=> buy_hold_return .=> ["bh_return"]
     ]
 )
     df = copy(df)
@@ -36,8 +24,8 @@ function calculate_car(
 
     crsp = leftjoin(crsp, crspM, on=:date)
     crsp[!, :car] = crsp[:, :ret] .- crsp[:, market_return]
-    crsp[!, :plus1] = crsp[:, :ret] .+ 1
-    crsp[!, :plus1m] = crsp[:, market_return] .+ 1
+    # crsp[!, :plus1] = crsp[:, :ret] .+ 1
+    # crsp[!, :plus1m] = crsp[:, market_return] .+ 1
     rename!(crsp, :date => :retDate)
     rename!(crsp, market_return => "retm")
 
@@ -64,12 +52,13 @@ function calculate_car(
     ret_period::Tuple{<:DatePeriod, <:DatePeriod};
     date::String="date",
     idcol::String="permno",
+    market_return::String="vwretd",
     out_cols=[
         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar"
-    ],
-    market_return::String="vwretd"
+        ["car", "ret"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+        ["ret"] .=> buy_hold_return .=> ["bh_return"]
+    ]
 )
     calculate_car(
         data,
@@ -88,12 +77,13 @@ function calculate_car(
     ret_period::EventWindow;
     date::String="date",
     idcol::String="permno",
+    market_return::String="vwretd",
     out_cols=[
         ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar"
-    ],
-    market_return::String="vwretd"
+        ["car", "ret"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+        ["ret"] .=> buy_hold_return .=> ["bh_return"]
+    ]
 )
     df = copy(df)
     if date ∉ names(df)
@@ -105,7 +95,7 @@ function calculate_car(
     df[!, :dateStart] = df[:, date] .+ ret_period.s
     df[!, :dateEnd] = df[:, date] .+ ret_period.e
 
-    return calculate_car(data, df; idcol, out_cols)
+    return calculate_car(data, df; idcol, out_cols, market_return)
 end
 
 function calculate_car(
@@ -114,7 +104,13 @@ function calculate_car(
     ret_period::Tuple{<:DatePeriod, <:DatePeriod};
     date::String="date",
     idcol::String="permno",
-    market_return::String="vwretd"
+    market_return::String="vwretd",
+    out_cols=[
+        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
+        ["car", "ret"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+        ["ret"] .=> buy_hold_return .=> ["bh_return"]
+    ]
 )
     calculate_car(
         dsn,
@@ -122,7 +118,8 @@ function calculate_car(
         EventWindow(ret_period);
         date,
         idcol,
-        market_return
+        market_return,
+        out_cols
     )
 end
 
@@ -132,7 +129,13 @@ function calculate_car(
     ret_period::EventWindow;
     date::String="date",
     idcol::String="permno",
-    market_return::String="vwretd"
+    market_return::String="vwretd",
+    out_cols=[
+        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
+        ["car", "ret"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+        ["ret"] .=> buy_hold_return .=> ["bh_return"]
+    ]
 )
     df = copy(df)
     
@@ -145,7 +148,8 @@ function calculate_car(
         date_start="dateStart",
         date_end="dateEnd",
         idcol,
-        market_return
+        market_return,
+        out_cols
     )
 end
 
@@ -155,7 +159,13 @@ function calculate_car(
     date_start::String="dateStart",
     date_end::String="dateEnd",
     idcol::String="permno",
-    market_return::String = "vwretd"
+    market_return::String="vwretd",
+    out_cols=[
+        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
+        ["car", "ret"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+        ["ret"] .=> buy_hold_return .=> ["bh_return"]
+    ]
 )
     df = copy(df)
 
@@ -167,7 +177,15 @@ function calculate_car(
         dateEnd = maximum(df[:, date_end]),
         col = market_return
     )
-    return calculate_car((crsp, crspM), df; date_start, date_end, idcol)
+    return calculate_car(
+        (crsp, crspM),
+        df;
+        date_start,
+        date_end,
+        idcol,
+        market_return,
+        out_cols
+    )
 end
 
 
@@ -178,7 +196,13 @@ function calculate_car(
     ret_periods::Vector{EventWindow};
     date::String="date",
     idcol::String="permno",
-    market_return::String="vwretd"
+    market_return::String="vwretd",
+    out_cols=[
+        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
+        ["car", "ret"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+        ["ret"] .=> buy_hold_return .=> ["bh_return"]
+    ]
 )
 
 
@@ -189,9 +213,9 @@ function calculate_car(
     for ret_period in ret_periods
         df[!, :name] .= repeat([ret_period], nrow(df))
         if size(dfAll, 1) == 0
-            dfAll = calculate_car(data, df, ret_period; date=date, idcol=idcol, market_return=market_return)
+            dfAll = calculate_car(data, df, ret_period; date, idcol, market_return, out_cols)
         else
-            dfAll = vcat(dfAll, calculate_car(data, df, ret_period; date=date, idcol=idcol, market_return=market_return))
+            dfAll = vcat(dfAll, calculate_car(data, df, ret_period; date, idcol, market_return, out_cols))
         end
     end
     return dfAll
@@ -204,6 +228,12 @@ function calculate_car(
     date::String="date",
     idcol::String="permno",
     market_return::String="vwretd",
+    out_cols=[
+        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
+        ["car", "ret"] .=> std,
+        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+        ["ret"] .=> buy_hold_return .=> ["bh_return"]
+    ]
 )
     
     df = copy(df)
@@ -230,7 +260,15 @@ function calculate_car(
         col = market_return,
     )
 
-    return calculate_car((crsp, crspM), df, ret_periods; date=date, idcol=idcol, market_return=market_return)
+    return calculate_car(
+        (crsp, crspM),
+        df,
+        ret_periods;
+        date,
+        idcol,
+        market_return,
+        out_cols
+    )
 
 end
 

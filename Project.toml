@@ -1,7 +1,7 @@
 name = "WRDSMerger"
 uuid = "59d27aa3-834e-4232-9046-52ef43e86786"
 authors = ["junder873 <junder873@gmail.com>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 BusinessDays = "4f18b42c-503e-5345-9536-bb0f25fc7038"
@@ -25,6 +25,7 @@ ParallelKMeans = "1"
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 
 [targets]
-test = ["Test", "SQLite"]
+test = ["Test", "SQLite", "CSV"]

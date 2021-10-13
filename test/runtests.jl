@@ -1,4 +1,4 @@
-using SQLite, DataFrames, Dates, Test
+using SQLite, DataFrames, Dates, Test, CSV
 using WRDSMerger
 
 ##
@@ -325,3 +325,59 @@ ff_market_data = WRDSMerger.ff_data(db)
 df = calculate_car((crsp_firms, ff_market_data), temp, [ff, ff2])
 println(size(df))
 @test nrow(df) > 0
+
+##
+
+temp = DataFrame(
+    permno=[82515, 14763, 15291, 51369, 61516, 76185, 87445],
+    date=[Date(2020, 10, 7), Date(2020, 9, 21), Date(2020, 9, 21), Date(2020, 9, 21), Date(2020, 6, 22), Date(2020, 6, 22), Date(2020, 6, 22)]
+)
+
+sort!(temp, :permno)
+df_res = CSV.File(joinpath("data", "car_results.csv")) |> DataFrame
+sort!(df_res, :permno)
+
+# the SAS code that I tested this against appears to round results to 3 significant digits
+
+ff = FFEstMethod(event_window=EventWindow(BDay(-10, :USNYSE), BDay(10, :USNYSE)))
+df = calculate_car(db, temp, ff)
+sort!(df, :permno)
+@test isapprox.(round.(df.car_ff, sigdigits=3), df_res.car_ff) |> all
+@test isapprox.(round.(df.bhar_ff, sigdigits=3), df_res.bhar_ff) |> all
+@test isapprox.(df.std_ff .^ 2, df_res.estimation_period_variance_ff_model_, rtol=.000001) |> all
+
+
+ff = FFEstMethod(event_window=EventWindow(BDay(-10, :USNYSE), BDay(10, :USNYSE)), ff_sym=[:mktrf, :smb, :hml, :umd])
+df = calculate_car(db, temp, ff)
+sort!(df, :permno)
+@test isapprox.(round.(df.car_ff, sigdigits=3), df_res.car_ffm) |> all
+@test isapprox.(round.(df.bhar_ff, sigdigits=3), df_res.bhar_ffm) |> all
+@test isapprox.(df.std_ff .^ 2, df_res.estimation_period_variance_carhart_model_, rtol=.000001) |> all
+
+
+ff = FFEstMethod(event_window=EventWindow(BDay(-10, :USNYSE), BDay(10, :USNYSE)), ff_sym=[:mktrf])
+df = calculate_car(db, temp, ff)
+sort!(df, :permno)
+
+@test isapprox.(round.(df.car_ff, sigdigits=3), df_res.car_mm) |> all
+@test isapprox.(round.(df.bhar_ff, sigdigits=3), df_res.bhar_mm) |> all
+@test isapprox.(df.std_ff .^ 2, df_res.estimation_period_variance_market_model_, rtol=.000001) |> all
+
+
+# there are subtle differences between crsp vwretd and the returns listed in fama french
+# to be able to accurately test this, I use the fama french data, but the results are very similar
+
+df_crsp_firms = crsp_data(db)
+df_crsp_market = ff_data(db)
+df_crsp_market[!, :mkt] = df_crsp_market.mktrf .+ df_crsp_market.rf
+
+
+df = calculate_car(
+    (df_crsp_firms, df_crsp_market),
+    temp,
+    EventWindow(BDay(-10, :USNYSE), BDay(10, :USNYSE)),
+    market_return="mkt"
+)
+sort!(df, :permno)
+@test isapprox.(round.(df.car_sum, sigdigits=3), df_res.car_ma) |> all
+@test isapprox.(round.(df.bhar, sigdigits=3), df_res.bhar_ma) |> all
