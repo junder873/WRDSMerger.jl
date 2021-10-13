@@ -164,6 +164,42 @@ function change_function(fun)
     end
 end
 
+function filter_data(
+    df_row::DataFrameRow,
+    df_partial::AbstractDataFrame,
+    conditions::Array{Conditions};
+    join_conditions::Union{Array{Symbol}, Symbol}=:and,
+)
+
+
+    fil = ones(Bool, nrow(df_partial))
+
+
+    for (j, condition) in enumerate(conditions)
+        temp_join = if typeof(join_conditions) <: Symbol
+            join_conditions
+        elseif j == 1 # if it is the first time through, all the current values are
+            :and
+        else
+            join_conditions[j-1]
+        end
+        if temp_join == :and
+            fil = fil .& broadcast(
+                condition.fun,
+                df_row[condition.l],
+                df_partial[:, condition.r]
+            )
+        else
+            fil = fil .| broadcast(
+                condition.fun,
+                df_row[condition.l],
+                df_partial[:, condition.r]
+            )
+        end
+    end
+    return fil
+end
+
 
 """
 
@@ -283,7 +319,7 @@ function range_join(
         repeat([Int[]], nrow(df1))
     end
 
-    for i in 1:nrow(df1)
+    Threads.@threads for i in 1:nrow(df1)
         # looking at the source code for "get", it is just running a try -> catch
         # function, so if I could pre-identify the cases where this will fail
         # I can avoid the try -> catch altogether
@@ -297,34 +333,13 @@ function range_join(
             continue
         end
 
+        fil = filter_data(
+            df1[i, :],
+            temp,
+            conditions;
+            join_conditions
+        )
 
-        fil = ones(Bool, nrow(temp))
-
-
-        for (j, condition) in enumerate(conditions)
-            temp_join = if typeof(join_conditions) <: Symbol
-                join_conditions
-            elseif j == 1 # if it is the first time through, all the current values are
-                :and
-            else
-                join_conditions[j-1]
-            end
-            if temp_join == :and
-                fil = fil .& broadcast(
-                    condition.fun,
-                    df1[i, condition.l],
-                    temp[:, condition.r]
-                )
-            else
-                fil = fil .| broadcast(
-                    condition.fun,
-                    df1[i, condition.l],
-                    temp[:, condition.r]
-                )
-            end
-        end
-
-        #temp = temp[fil, :]
 
         if minimize !== nothing && sum(fil) > 1
             temp = temp[fil, :]

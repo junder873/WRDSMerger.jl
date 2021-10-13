@@ -293,7 +293,8 @@ function calculate_car(
         date_end,
         est_window_start,
         est_window_end,
-        suppress_warning
+        suppress_warning,
+        event_date
     )
     crsp_raw = leftjoin(
         crsp_raw,
@@ -301,26 +302,7 @@ function calculate_car(
         on=:date,
         validate=(false, true)
     )
-    rename!(crsp_raw, "date" => "return_date")
-    ff_est_windows = range_join(
-        df,
-        crsp_raw,
-        [idcol],
-        [
-            Conditions(<=, est_window_start, "return_date"),
-            Conditions(>=, est_window_end, "return_date")
-        ]
-    )
 
-    event_windows = range_join(
-        df,
-        crsp_raw,
-        [idcol],
-        [
-            Conditions(<=, date_start, "return_date"),
-            Conditions(>=, date_end, "return_date")
-        ]
-    )
     # My understanding is the original Fama French subtracted risk free
     # rate, but it does not appear WRDS does this, so I follow that
     # event_windows[!, :ret_rf] = event_windows.ret .- event_windows[:, :rf]
@@ -329,9 +311,9 @@ function calculate_car(
     # I need to dropmissing here since not doing so creates huge problems
     # in the prediction component, where it thinks all of the data
     # is actually categorical in nature
-    dropmissing!(event_windows, ff_est.ff_sym)
-    gdf_ff = groupby(ff_est_windows, [idcol, est_window_start, est_window_end])
-    gdf_event = groupby(event_windows, [idcol, date_start, date_end])
+    rename!(crsp_raw, "date" => "return_date")
+    dropmissing!(crsp_raw, vcat([:ret], ff_est.ff_sym))
+    gdf_crsp = groupby(crsp_raw, idcol)
 
     f = term(:ret) ~ sum(term.(ff_est.ff_sym))
     
@@ -341,27 +323,47 @@ function calculate_car(
     df[!, :obs_event] = Vector{Union{Missing, Int}}(missing, nrow(df))
     df[!, :obs_ff] = Vector{Union{Missing, Int}}(missing, nrow(df))
 
-    for i in 1:nrow(df)
-        temp_ff = get(
-            gdf_ff,
-            (df[i, idcol], df[i, est_window_start], df[i, est_window_end]),
+    Threads.@threads for i in 1:nrow(df)
+        temp = get(
+            gdf_crsp,
+            Tuple(df[i, idcol]),
             DataFrame()
         )
-        temp_event = get(
-            gdf_event,
-            NamedTuple(df[i, [idcol, date_start, date_end]]),
-            DataFrame()
+        nrow(temp) == 0 && continue
+        temp_ff = filter_data(
+            df[i, :],
+            temp,
+            [
+                Conditions(<=, est_window_start, "return_date"),
+                Conditions(>=, est_window_end, "return_date")
+            ]
         )
+        temp_ff = temp[temp_ff, :]
+        temp_event = filter_data(
+            df[i, :],
+            temp,
+            [
+                Conditions(<=, date_start, "return_date"),
+                Conditions(>=, date_end, "return_date")
+            ]
+        )
+        temp_event = temp[temp_event, :]
+ 
         nrow(temp_event) == 0 && continue
         df[i, :obs_ff] = nrow(temp_ff)
         nrow(temp_ff) < ff_est.min_est && continue
-        
-        rr = reg(temp_ff, f, save=true)
-        expected_ret = predict(rr, temp_event)
-        df[i, :car_ff] = sum(temp_event.ret .- expected_ret)
-        df[i, :std_ff] = sqrt(rr.rss / rr.dof_residual) # similar to std(rr.residuals), corrects for the number of parameters
-        df[i, :bhar_ff] = (prod(1 .+ temp_event.ret) .- 1) - (prod(1 .+ expected_ret) .- 1)
-        df[i, :obs_event] = nrow(temp_event)
+        #try
+            rr = reg(temp_ff, f, save=true)
+            expected_ret = predict(rr, temp_event)
+            df[i, :car_ff] = sum(temp_event.ret .- expected_ret)
+            df[i, :std_ff] = sqrt(rr.rss / rr.dof_residual) # similar to std(rr.residuals), corrects for the number of parameters
+            df[i, :bhar_ff] = bhar_calc(temp_event.ret, expected_ret)
+            df[i, :obs_event] = nrow(temp_event)
+        # catch
+        #     println(temp_ff)
+        #     println(ff_est.min_est)
+        # end
+
     end
     return df
 
