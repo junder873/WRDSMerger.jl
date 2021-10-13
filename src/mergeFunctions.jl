@@ -332,7 +332,7 @@ function link_identifiers(
                 Conditions(>=, datecol, "sdate")
             ],
             validate=(false, true),
-            minimize=["score" => "_temp_min"]
+            minimize=["_temp_min" => "score"]
         )
         select!(df, Not(["sdate", "edate", "_temp_min"]))
         if any([cusip, ncusip, gvkey, cik])

@@ -338,7 +338,7 @@ function calculate_car(
                 Conditions(>=, est_window_end, "return_date")
             ]
         )
-        temp_ff = temp[temp_ff, :]
+        #temp_ff = temp[temp_ff, :]
         temp_event = filter_data(
             df[i, :],
             temp,
@@ -350,19 +350,14 @@ function calculate_car(
         temp_event = temp[temp_event, :]
  
         nrow(temp_event) == 0 && continue
-        df[i, :obs_ff] = nrow(temp_ff)
-        nrow(temp_ff) < ff_est.min_est && continue
-        #try
-            rr = reg(temp_ff, f, save=true)
-            expected_ret = predict(rr, temp_event)
-            df[i, :car_ff] = sum(temp_event.ret .- expected_ret)
-            df[i, :std_ff] = sqrt(rr.rss / rr.dof_residual) # similar to std(rr.residuals), corrects for the number of parameters
-            df[i, :bhar_ff] = bhar_calc(temp_event.ret, expected_ret)
-            df[i, :obs_event] = nrow(temp_event)
-        # catch
-        #     println(temp_ff)
-        #     println(ff_est.min_est)
-        # end
+        df[i, :obs_ff] = sum(temp_ff)
+        sum(temp_ff) < ff_est.min_est && continue
+        rr = reg(temp[temp_ff, :], f)
+        expected_ret = predict(rr, temp_event)
+        df[i, :car_ff] = sum(temp_event.ret .- expected_ret)
+        df[i, :std_ff] = sqrt(rr.rss / rr.dof_residual) # similar to std(rr.residuals), corrects for the number of parameters
+        df[i, :bhar_ff] = bhar_calc(temp_event.ret, expected_ret)
+        df[i, :obs_event] = nrow(temp_event)
 
     end
     return df
