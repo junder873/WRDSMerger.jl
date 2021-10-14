@@ -8,28 +8,60 @@ end
 EventWindow(x::Tuple{DatePeriod, DatePeriod}) = EventWindow(x[1], x[2])
 
 struct FFEstMethod
-    estimation_length::DatePeriod
-    gap_to_event::DatePeriod
+    estimation_window::Union{Missing, EventWindow}
+    gap_to_event::Union{String, DatePeriod}
     min_est::Int
-    ff_sym::Array{Symbol}
+    ff_sym::Vector{Symbol}
     event_window::Union{Missing, EventWindow}
 end
 
 function FFEstMethod(
     ;
-    estimation_length::DatePeriod=BDay(150, :USNYSE),
-    gap_to_event::DatePeriod=BDay(15, :USNYSE),
+    estimation_window::Union{Missing, EventWindow}=EventWindow(BDay(-150, :USNYSE), Day(0)),
+    gap_to_event::Union{String, DatePeriod}=BDay(-15, :USNYSE),
     min_est::Int=120,
-    ff_sym::Array{Symbol}=[:mktrf, :smb, :hml],
+    ff_sym::Vector{Symbol}=[:mktrf, :smb, :hml],
     event_window::Union{Missing, EventWindow}=missing
 )
     FFEstMethod(
-        estimation_length,
+        estimation_window,
         gap_to_event,
         min_est,
         ff_sym,
         event_window
     )
+end
+
+struct FFEstimation
+    est_start::Date
+    est_end::Date
+    event_start::Date
+    event_end::Date
+    min_est::Int
+    ff_sym::Vector{Symbol}
+    function FFEstimation(
+        est_start,
+        est_end,
+        event_start,
+        event_end,
+        min_est,
+        ff_sym
+    )
+        if est_start >= est_end
+            error("`est_start` must be before `est_end`")
+        end
+        if event_start >= event_end
+            error("`event_start` must be before `event_end`")
+        end
+        if countbdays(:USNYSE, est_start, est_end) <= min_est
+            x = "The number of business days in the estimation"
+            x *= " period is less than or equal to the `min_est` "
+            x *= "variable, this will make it hard to estimate "
+            x *= "any cases."
+            @warn(x)
+        end
+        new(est_start, est_end, event_start, event_end, min_est, ff_sym)
+    end
 end
 
 
@@ -276,7 +308,7 @@ function range_join(
         on1, on2 = parse_ons(on)
         if minimize !== nothing
             min1, min2 = parse_ons(minimize)
-            new_min = [min2[i] => min1[i] for i in 1:length(min1)]
+            new_min = [min2[i] .=> min1[i]]
         else
             new_min=nothing
         end
@@ -291,7 +323,7 @@ function range_join(
         return range_join(
             df2,
             df1,
-            [on2[i] => on1[i] for i in 1:length(on1)],
+            [on2 .=> on1],
             new_cond;
             minimize=new_min,
             join_conditions,
@@ -557,19 +589,17 @@ function make_ff_est_windows!(
 )
     if ismissing(ff_est.event_window)
         if date_start ∉ names(df) || date_end ∉ names(df)
-            @error """
-                If `event_window` is `missing` in FFEstMethod,
-                $date_start and $date_end must be included instead.
-            """
+            x = "If `event_window` is `missing` in FFEstMethod, "
+            x *= "$date_start and $date_end must be included instead."
+            @error x
         end
     else
         if !suppress_warning && (date_start ∈ names(df) || date_end ∈ names(df))
-            @warn """
-                $date_start or $date_end are already in the
-                dataframe, passing a nonmissing value to
-                `FFEstMethod` `event_window` will overwrite
-                the preexisting values in $date_start and $date_end.
-            """
+            x = "$date_start or $date_end are already in the "
+            x *= "dataframe, passing a nonmissing value to "
+            x *= "`FFEstMethod` `event_window` will overwrite "
+            x *= "the preexisting values in $date_start and $date_end."
+            @warn x
         end
         # if the estimation window has business days, adjust the event
         # date to a business day
@@ -577,13 +607,41 @@ function make_ff_est_windows!(
         df[!, date_start] = df[:, event_date] .+ to_bday .+ ff_est.event_window.s
         df[!, date_end] = df[:, event_date] .+ to_bday .+ ff_est.event_window.e
     end
-    if est_window_end ∉ names(df) || est_window_start ∉ names(df)
-        df[!, est_window_end] = df[:, date_start] .- ff_est.gap_to_event
 
-        df[!, est_window_start] = df[:, est_window_end] .- ff_est.estimation_length
-        # I subtract an extra day since not doing so makes the trading
-        # window longer and the between gap a day shorter than it should be
-        extra_day = typeof(ff_est.gap_to_event) == BDay ? BDay(1, ff_est.gap_to_event.calendar) : Day(1)
-        df[!, est_window_end] .-= extra_day
+    if ismissing(ff_est.estimation_window)
+        if est_window_end ∉ names(df) || est_window_start ∉ names(df)
+            x = "if `estimation_window` is `missing` in FFEstMethod,"
+            x *= " $est_window_start and $est_window_end must be included"
+            x *= " instead."
+            @error x
+        end
+    else
+        if !suppress_warning && (est_window_end ∈ names(df) || est_window_start ∈ names(df))
+            x = "$est_window_start or $est_window_end are already in the "
+            x *= "dataframe, passing a nonmissing value to "
+            x *= "`FFEstMethod` `event_window` will overwrite "
+            x *= "the preexisting values in $est_window_start and $est_window_end."
+            @warn x
+        end
+        if typeof(ff_est.gap_to_event) <: String && ff_est.gap_to_event ∉ names(df)
+            x = "If `gap_to_event` in FFEstMethod is a `String`"
+            x *= " that `String` must be a column name in the `DataFrame`."
+            @error x
+        end
+        if typeof(ff_est.gap_to_event) <: String
+            to_bday = typeof(ff_est.event_window.e) == BDay ? BDay(0, ff_est.estimation_window.e.calendar) : Day(0)
+            df[!, est_window_end] = df[:, ff_est.gap_to_event] .+ to_bday .+ ff_estimation_window.e
+            df[!, est_window_start] = df[:, ff_est.gap_to_event] .+ to_bday .+ ff_estimation_window.s
+        else
+            # I subtract an extra day since not doing so makes the trading
+            # window longer and the between gap a day shorter than it should be
+            extra_day = typeof(ff_est.gap_to_event) == BDay ? BDay(1, ff_est.gap_to_event.calendar) : Day(1)
+
+            df[!, est_window_end] = df[:, date_start] .+ ff_est.gap_to_event .- extra_day .+ ff_est.estimation_window.e
+            # I don't subtract an extra day here since doing so adds an extra day
+            # to the estimation period
+            df[!, est_window_start] = df[:, date_start] .+ ff_est.gap_to_event .+ ff_est.estimation_window.s
+
+        end
     end
 end
