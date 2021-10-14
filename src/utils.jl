@@ -308,7 +308,7 @@ function range_join(
         on1, on2 = parse_ons(on)
         if minimize !== nothing
             min1, min2 = parse_ons(minimize)
-            new_min = [min2[i] .=> min1[i]]
+            new_min = min2 .=> min1
         else
             new_min=nothing
         end
@@ -323,7 +323,7 @@ function range_join(
         return range_join(
             df2,
             df1,
-            [on2 .=> on1],
+            on2 .=> on1,
             new_cond;
             minimize=new_min,
             join_conditions,
@@ -619,7 +619,7 @@ function make_ff_est_windows!(
         if !suppress_warning && (est_window_end ∈ names(df) || est_window_start ∈ names(df))
             x = "$est_window_start or $est_window_end are already in the "
             x *= "dataframe, passing a nonmissing value to "
-            x *= "`FFEstMethod` `event_window` will overwrite "
+            x *= "`FFEstMethod` `estimation_window` will overwrite "
             x *= "the preexisting values in $est_window_start and $est_window_end."
             @warn x
         end
@@ -629,9 +629,9 @@ function make_ff_est_windows!(
             @error x
         end
         if typeof(ff_est.gap_to_event) <: String
-            to_bday = typeof(ff_est.event_window.e) == BDay ? BDay(0, ff_est.estimation_window.e.calendar) : Day(0)
-            df[!, est_window_end] = df[:, ff_est.gap_to_event] .+ to_bday .+ ff_estimation_window.e
-            df[!, est_window_start] = df[:, ff_est.gap_to_event] .+ to_bday .+ ff_estimation_window.s
+            to_bday = typeof(ff_est.estimation_window.e) == BDay ? BDay(0, ff_est.estimation_window.e.calendar) : Day(0)
+            df[!, est_window_end] = df[:, ff_est.gap_to_event] .+ to_bday .+  ff_est.estimation_window.e
+            df[!, est_window_start] = df[:, ff_est.gap_to_event] .+ to_bday .+  ff_est.estimation_window.s
         else
             # I subtract an extra day since not doing so makes the trading
             # window longer and the between gap a day shorter than it should be
