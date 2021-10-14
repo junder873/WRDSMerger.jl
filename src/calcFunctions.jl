@@ -322,15 +322,18 @@ function calculate_car(
     df[!, :std_ff] = Vector{Union{Missing, Float64}}(missing, nrow(df))
     df[!, :obs_event] = Vector{Union{Missing, Int}}(missing, nrow(df))
     df[!, :obs_ff] = Vector{Union{Missing, Int}}(missing, nrow(df))
-
-    Threads.@threads for i in 1:nrow(df)
+    # for some reason, threading here drastically slows things down
+    # on bigger datasets, for small sets it is sometimes faster
+    # the difference primarily is in garbage collection, with large numbers
+    # it alwasy ends up spending a ton of time garbage collecting
+    for i in 1:nrow(df)
         temp = get(
             gdf_crsp,
             Tuple(df[i, idcol]),
             DataFrame()
         )
         nrow(temp) == 0 && continue
-        temp_ff = filter_data(
+        fil_ff = filter_data(
             df[i, :],
             temp,
             [
@@ -338,8 +341,10 @@ function calculate_car(
                 Conditions(>=, est_window_end, "return_date")
             ]
         )
+        df[i, :obs_ff] = sum(fil_ff)
+        sum(fil_ff) < ff_est.min_est && continue
         #temp_ff = temp[temp_ff, :]
-        temp_event = filter_data(
+        fil_event = filter_data(
             df[i, :],
             temp,
             [
@@ -347,12 +352,11 @@ function calculate_car(
                 Conditions(>=, date_end, "return_date")
             ]
         )
-        temp_event = temp[temp_event, :]
+        temp_event = temp[fil_event, :]
  
         nrow(temp_event) == 0 && continue
-        df[i, :obs_ff] = sum(temp_ff)
-        sum(temp_ff) < ff_est.min_est && continue
-        rr = reg(temp[temp_ff, :], f)
+
+        rr = reg(temp[fil_ff, :], f)
         expected_ret = predict(rr, temp_event)
         df[i, :car_ff] = sum(temp_event.ret .- expected_ret)
         df[i, :std_ff] = sqrt(rr.rss / rr.dof_residual) # similar to std(rr.residuals), corrects for the number of parameters

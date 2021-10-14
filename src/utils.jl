@@ -319,7 +319,11 @@ function range_join(
         repeat([Int[]], nrow(df1))
     end
 
-    Threads.@threads for i in 1:nrow(df1)
+    # similar to the calc functions, I found that threading here often
+    # made things a lot slower since there was a lot of time spent
+    # garbage collecting instead of running the function
+    # threading can help, but perhaps the costs outweigh the benefits
+    for i in 1:nrow(df1)
         # looking at the source code for "get", it is just running a try -> catch
         # function, so if I could pre-identify the cases where this will fail
         # I can avoid the try -> catch altogether
