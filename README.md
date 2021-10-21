@@ -4,6 +4,17 @@
 
 This package is designed to perform common tasks using the Wharton Research Database Services (WRDS). In particular, there is a focus on data from CRSP (stock market data), Compustat (firm balance sheet and income data) and the links between these datasets. It also implements an abnormal return calculation.
 
+## Installation
+
+This package is registered, so in the Julia REPL:
+```julia
+]add WRDSMerger
+```
+or
+```
+julia> using Pkg; Pkg.add("WRDSMerger")
+```
+
 ## General Usage
 
 This package requires a subscription to WRDS and can only access datasets that are included in your subscription. There are several ways to connect to the database. The simplest and most reliable is to use [LibPQ.jl](https://github.com/invenia/LibPQ.jl), to initiate a connection run:
