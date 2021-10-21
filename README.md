@@ -11,7 +11,7 @@ This package is registered, so in the Julia REPL:
 ]add WRDSMerger
 ```
 or
-```
+```julia
 julia> using Pkg; Pkg.add("WRDSMerger")
 ```
 
