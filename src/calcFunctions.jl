@@ -99,7 +99,7 @@ function calculate_car(
 end
 
 function calculate_car(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
     df::AbstractDataFrame,
     ret_period::Tuple{<:DatePeriod, <:DatePeriod};
     date::String="date",
@@ -113,7 +113,7 @@ function calculate_car(
     ]
 )
     calculate_car(
-        dsn,
+        conn,
         df,
         EventWindow(ret_period);
         date,
@@ -124,7 +124,7 @@ function calculate_car(
 end
 
 function calculate_car(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
     df::AbstractDataFrame,
     ret_period::EventWindow;
     date::String="date",
@@ -143,7 +143,7 @@ function calculate_car(
     df[!, :dateEnd] = df[:, date] .+ ret_period.e
 
     return calculate_car(
-        dsn,
+        conn,
         df;
         date_start="dateStart",
         date_end="dateEnd",
@@ -154,7 +154,7 @@ function calculate_car(
 end
 
 function calculate_car(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
     df::AbstractDataFrame;
     date_start::String="dateStart",
     date_end::String="dateEnd",
@@ -170,9 +170,9 @@ function calculate_car(
     df = copy(df)
 
 
-    crsp = crsp_data(dsn, df; date_start, date_end)
+    crsp = crsp_data(conn, df; date_start, date_end)
     crspM = crsp_market(
-        dsn,
+        conn,
         dateStart = minimum(df[:, date_start]),
         dateEnd = maximum(df[:, date_end]),
         col = market_return
@@ -222,7 +222,7 @@ function calculate_car(
 end
 
 function calculate_car(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
     df::AbstractDataFrame,
     ret_periods::Vector{EventWindow};
     date::String="date",
@@ -251,10 +251,10 @@ function calculate_car(
     gdf = groupby(df_temp, [idcol, date])
     df_temp = combine(gdf, "dateStart" => minimum => "dateStart", "dateEnd" => maximum => "dateEnd")
 
-    crsp = crsp_data(dsn, df_temp)
+    crsp = crsp_data(conn, df_temp)
 
     crspM = crsp_market(
-        dsn,
+        conn,
         dateStart = minimum(df_temp[:, :dateStart]),
         dateEnd = maximum(df_temp[:, :dateEnd]),
         col = market_return,
@@ -369,7 +369,7 @@ function calculate_car(
 end
 
 function calculate_car(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
     df::AbstractDataFrame,
     ff_est::FFEstMethod;
     date_start::String="dateStart",
@@ -396,9 +396,9 @@ function calculate_car(
     rename!(temp, est_window_start => date_start, est_window_end => date_end)
     temp = vcat(temp, df[:, [idcol, date_start, date_end]]) |> unique
 
-    crsp_raw = crsp_data(dsn, temp; date_start, date_end)
+    crsp_raw = crsp_data(conn, temp; date_start, date_end)
     ff_download = ff_data(
-        dsn;
+        conn;
         date_start=minimum(temp[:, date_start]),
         date_end=maximum(temp[:, date_end])
     )

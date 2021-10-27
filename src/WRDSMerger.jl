@@ -25,7 +25,8 @@ export link_identifiers, comp_data,
     crsp_adjust, crsp_delist,
     ibes_crsp_link, calculate_car, 
     range_join, @join, BDay, FFEstMethod,
-    EventWindow, Conditions, ff_data
+    EventWindow, Conditions, ff_data,
+    DataFrame
 
 ##############################################################################
 ##
@@ -38,7 +39,8 @@ include("crspFunctions.jl")
 include("calcFunctions.jl")
 include("compFunctions.jl")
 include("mergeFunctions.jl")
-include("date_functions.jl")
+include("dateFunctions.jl")
+include("exploreDB.jl")
 
 
 global default_tables = TableDefaults(
@@ -54,5 +56,4 @@ global default_tables = TableDefaults(
     "ff.factors_daily"
 )
 
-
-end # module
+end 

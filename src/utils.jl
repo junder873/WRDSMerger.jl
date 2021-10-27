@@ -66,7 +66,7 @@ end
 
 
 function ff_data(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection};
+    conn::Union{LibPQ.Connection, DBInterface.Connection};
     date_start::Date=Date(1926, 7, 1),
     date_end::Date=today(),
     cols::Array{String}=[
@@ -83,15 +83,15 @@ function ff_data(
         SELECT $col_str FROM $(default_tables.ff_factors)
         WHERE date BETWEEN '$date_start' AND '$date_end'
     """
-    return run_sql_query(dsn, query)
+    return run_sql_query(conn, query)
 end
 
 
 parse_date(d) = ismissing(d) ? missing : Date(d)
 
-run_sql_query(dsn::LibPQ.Connection, q::AbstractString) = LibPQ.execute(dsn, q) |> DataFrame
+run_sql_query(conn::LibPQ.Connection, q::AbstractString) = LibPQ.execute(conn, q) |> DataFrame
 function run_sql_query(
-    dsn::DBInterface.Connection,
+    conn::DBInterface.Connection,
     q::AbstractString;
     date_cols=[
         "date",
@@ -104,7 +104,7 @@ function run_sql_query(
         "linkenddt"
     ]
 )
-    temp = DBInterface.execute(dsn, q) |> DataFrame
+    temp = DBInterface.execute(conn, q) |> DataFrame
     for col in date_cols
         if col ∈ names(temp)
             temp[!, col] = parse_date.(temp[:, col])
