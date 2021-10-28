@@ -1,5 +1,3 @@
-using DataFrames, LibPQ
-
 """
 function list_libraries(conn::Union{LibPQ.Connection, 
                     DBInterface.Connection})::DataFrame

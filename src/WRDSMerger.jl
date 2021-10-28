@@ -26,7 +26,7 @@ export link_identifiers, comp_data,
     ibes_crsp_link, calculate_car, 
     range_join, @join, BDay, FFEstMethod,
     EventWindow, Conditions, ff_data,
-    DataFrame
+    execute
 
 ##############################################################################
 ##
