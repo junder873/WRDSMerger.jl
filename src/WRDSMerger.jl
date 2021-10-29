@@ -38,7 +38,8 @@ include("crspFunctions.jl")
 include("calcFunctions.jl")
 include("compFunctions.jl")
 include("mergeFunctions.jl")
-include("date_functions.jl")
+include("dateFunctions.jl")
+include("exploreDB.jl")
 
 
 global default_tables = TableDefaults(
@@ -54,5 +55,4 @@ global default_tables = TableDefaults(
     "ff.factors_daily"
 )
 
-
-end # module
+end 

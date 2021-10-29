@@ -22,7 +22,7 @@ end
 
 """
     function comp_data(
-        dsn::Union{LibPQ.Connection, DBInterface.Connection},
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
         gvkeys::AbstractArray{String},
         dateStart::Union{Date, Int},
         dateEnd::Union{Date, Int};
@@ -45,7 +45,7 @@ Filters is a dictionary of String => String pairings that will be applied to the
 It can also accept an array of Strings.
 """
 function comp_data(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
     gvkeys::AbstractArray{String},
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
@@ -77,13 +77,13 @@ function comp_data(
         """
 
 
-    return run_sql_query(dsn, query) |> DataFrame
+    return run_sql_query(conn, query) |> DataFrame
 end
 
 
 """
     function comp_data(
-        dsn::Union{LibPQ.Connection, DBInterface.Connection},
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
         dateStart::Union{Date,Int}=1950,
         dateEnd::Union{Date,Int}=Dates.today();
         annual::Bool=true,
@@ -105,7 +105,7 @@ Filters is a dictionary of String => String pairings that will be applied to the
 It can also accept an array of Strings.
 """
 function comp_data(
-    dsn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
     annual::Bool=true,
@@ -135,5 +135,5 @@ function comp_data(
         where datadate between '$dateStart' and '$dateEnd' $filterString
     """
     
-    return run_sql_query(dsn, query) |> DataFrame
+    return run_sql_query(conn, query) |> DataFrame
 end
