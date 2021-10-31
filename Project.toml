@@ -4,28 +4,31 @@ authors = ["junder873 <junder873@gmail.com>"]
 version = "0.1.2"
 
 [deps]
+AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
 BusinessDays = "4f18b42c-503e-5345-9536-bb0f25fc7038"
 DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 FixedEffectModels = "9d5cd8c9-2029-5cab-9928-427838db53e3"
+InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 LibPQ = "194296ae-ab2e-5f79-8cd4-7183a0a5a0d1"
 ParallelKMeans = "42b8e9d4-006b-409a-8472-7f34b3fb58af"
+ShiftedArrays = "1277b4bf-5013-50f5-be3d-901d8477a67a"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [compat]
 BusinessDays = "0.9"
-DataFrames = "1.2"
-LibPQ = "1.8"
-julia = "1.5"
 DBInterface = "2.4"
+DataFrames = "1.2"
 FixedEffectModels = "1.6"
+LibPQ = "1.8"
 ParallelKMeans = "1"
+julia = "1.5"
 
 [extras]
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test", "SQLite", "CSV"]

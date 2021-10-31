@@ -7,16 +7,16 @@ using WRDSMerger
 db = SQLite.DB(joinpath("data", "sql_data.sqlite"))
 
 ##
-WRDSMerger.default_tables.comp_funda = "compa_funda"
-WRDSMerger.default_tables.comp_fundq = "compa_fundq"
-WRDSMerger.default_tables.crsp_stocknames = "crsp_stocknames"
-WRDSMerger.default_tables.crsp_index = "crsp_dsi"
-WRDSMerger.default_tables.crsp_stock_data = "crsp_dsf"
-WRDSMerger.default_tables.crsp_delist = "crsp_dsedelist"
-WRDSMerger.default_tables.crsp_a_ccm_ccmxpf_lnkhist = "crsp_a_ccm_ccmxpf_lnkhist"
-WRDSMerger.default_tables.ibes_crsp = "wrdsapps_ibcrsphist"
-WRDSMerger.default_tables.comp_company = "comp_company"
-WRDSMerger.default_tables.ff_factors = "ff_factors_daily"
+WRDSMerger.default_tables["comp_funda"] = "compa_funda"
+WRDSMerger.default_tables["comp_fundq"] = "compa_fundq"
+WRDSMerger.default_tables["crsp_stocknames"] = "crsp_stocknames"
+WRDSMerger.default_tables["crsp_index"] = "crsp_dsi"
+WRDSMerger.default_tables["crsp_stock_data"] = "crsp_dsf"
+WRDSMerger.default_tables["crsp_delist"] = "crsp_dsedelist"
+WRDSMerger.default_tables["crsp_a_ccm_ccmxpf_lnkhist"] = "crsp_a_ccm_ccmxpf_lnkhist"
+WRDSMerger.default_tables["wrdsapps_ibcrsphist"] = "wrdsapps_ibcrsphist"
+WRDSMerger.default_tables["comp_company"] = "comp_company"
+WRDSMerger.default_tables["ff_factors"] = "ff_factors_daily"
 
 ##
 
@@ -113,15 +113,15 @@ df = crsp_market(db) |> dropmissing
 println(size(df))
 @test nrow(df) > 0
 
-df = crsp_market(db; dateStart=Date(2020)) |> dropmissing
+df = crsp_market(db, Date(2020)) |> dropmissing
 println(size(df))
 @test nrow(df) > 0
 
-df = crsp_market(db; dateEnd=Date(2020)) |> dropmissing
+df = crsp_market(db, Date(2018), Date(2020)) |> dropmissing
 println(size(df))
 @test nrow(df) > 0
 
-df = crsp_market(db; col="ewretd") |> dropmissing
+df = crsp_market(db; cols="ewretd") |> dropmissing
 println(size(df))
 @test nrow(df) > 0
 
@@ -199,68 +199,32 @@ println(size(df))
 
 ##
 
-temp = DataFrame(
-    permno=[10104],
-    date=[Date(2020)]
-)
-df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+df = link_identifiers(db, [Permno(10104)], [Date(2020)], Cusip, NCusip, GVKey, Ticker, IbesTicker)
 println(size(df))
 println(df)
 @test nrow(df) > 0
 
-temp = DataFrame(
-    gvkey=["012142"],
-    date=[Date(2020)]
-)
-df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+df = link_identifiers(db,  [GVKey(12142), GVKey("012142")], [Date(2020), Date(2020)], Permno, Cusip, NCusip, GVKey, Ticker, IbesTicker)
 println(size(df))
 println(df)
 @test nrow(df) > 0
 
-temp = DataFrame(
-    gvkey=[12142],
-    date=[Date(2020)]
-)
-df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+
+df = link_identifiers(db,  [CIK(1341439), CIK("0001341439")], [Date(2020), Date(2020)], IbesTicker)
 println(size(df))
 println(df)
 @test nrow(df) > 0
 
-temp = DataFrame(
-    cik=[1341439],
-    date=[Date(2020)]
-)
-df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+df = link_identifiers(db,  [Ticker("ORCL")], [Date(2020)], Permno, Cusip, NCusip, GVKey, Ticker, IbesTicker)
 println(size(df))
 println(df)
 @test nrow(df) > 0
 
-temp = DataFrame(
-    cik=["0001341439"],
-    date=[Date(2020)]
-)
-df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
+df = link_identifiers(db,  [IbesTicker("ORCL")], [Date(2020)], Permno, Cusip, NCusip, GVKey, Ticker, IbesTicker)
 println(size(df))
 println(df)
 @test nrow(df) > 0
 
-temp = DataFrame(
-    ticker=["ORCL"],
-    date=[Date(2020)]
-)
-df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true)
-println(size(df))
-println(df)
-@test nrow(df) > 0
-
-temp = DataFrame(
-    ticker=["ORCL"],
-    date=[Date(2020)]
-)
-df = link_identifiers(db, temp; permno=true, cusip=true, ncusip=true, gvkey=true, ticker=true, cik=true, ibes_ticker=true, ibes_ticker_name="ticker", ticker_name="other")
-println(size(df))
-println(df)
-@test nrow(df) > 0
 
 ##
 

@@ -1,4 +1,125 @@
+"""
+    function calculate_car(
+        data::Tuple{AbstractDataFrame, AbstractDataFrame},
+        df::AbstractDataFrame;
+    )
 
+    function calculate_car(
+        data::Tuple{AbstractDataFrame, AbstractDataFrame},
+        df::AbstractDataFrame,
+        ret_period::Tuple{<:DatePeriod, <:DatePeriod};
+    )
+
+    function calculate_car(
+        data::Tuple{AbstractDataFrame, AbstractDataFrame},
+        df::AbstractDataFrame,
+        ret_period::EventWindow;
+    )
+
+    function calculate_car(
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        df::AbstractDataFrame,
+        ret_period::Tuple{<:DatePeriod, <:DatePeriod};
+    )
+
+    function calculate_car(
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        df::AbstractDataFrame,
+        ret_period::EventWindow;
+    )
+
+    function calculate_car(
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        df::AbstractDataFrame;
+    )
+
+    function calculate_car(
+        data::Tuple{AbstractDataFrame, AbstractDataFrame},
+        df::AbstractDataFrame,
+        ret_periods::Vector{EventWindow};
+    )
+
+    function calculate_car(
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        df::AbstractDataFrame,
+        ret_periods::Vector{EventWindow};
+    )
+
+    function calculate_car(
+        data::Tuple{DataFrame, DataFrame},
+        df::DataFrame,
+        ff_est::FFEstMethod;
+    )
+
+    function calculate_car(
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        df::AbstractDataFrame,
+        ff_est::FFEstMethod;
+    )
+
+    function calculate_car(
+        data::Tuple{DataFrame, DataFrame},
+        df::AbstractDataFrame,
+        ff_ests::Vector{FFEstMethod};
+    )
+
+Calculates abnormal returns over a period, currently the Fama French and
+other methods are very different, with different options.
+
+# Arguments
+
+## Main Arguments
+
+- data: Provides the data source, one of the following:
+    - `conn::Union{LibPQ.Connection, DBInterface.Connection}`: A connection to a database
+    - `data::Tuple{DataFrame, DataFrame}`: A pair of DataFrames, the first is the stockfiles
+      for each individual stock, the second is for the market data
+- `df::AbstractDataFrame`: The second argument is a DataFrame, with an `idcol` and either a
+  `date` or `date_start` and `date_end` (customizable by kwargs).
+    - If `date` is passed, then there needs to be a `ret_periods` needs to also
+      be passed, which adjusts the `date` to `date_start` and `date_end`
+    - If no `ret_period` or `ff_est` is passed, then `date_start` and `date_end` must
+      be in the DataFrame. These are then used as the range over which abnormal returns
+      are summed
+- `ret_period`: Either an `EventWindow` or `FFEstMethod` type (or a vector of those types)
+  which specifies the primary event window and the estimation method for a Fama French abnormal
+  return
+
+## Keyword Arguments
+
+- Event Date or Window: 
+    - `date::String="date"`: The event date, only in functions where `ret_period` exists
+    - `date_start::String="dateStart"` and `date_end::String="dateEnd"` specify the event
+      period start and end dates, provides flexibility when the period might not be fixed
+- `idcol::String="permno"`: The primary identifying column, only change if downloading
+  data not from WRDS
+
+
+## Keyword Arguments for Non-Fama French Methods
+
+- `market_return::String="vwretd"`: The market return that a simple abnormal return is calculated
+  against
+
+```julia
+out_cols=[
+    ["ret", "vol", "shrout", "retm", "car"] .=> sum,
+    ["car", "ret"] .=> std,
+    ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
+    ["ret"] .=> buy_hold_return .=> ["bh_return"]
+]
+```
+This flexible calculation is used in a `combine` function to calculate various statistics
+over the event window.
+
+## Keyword Arguments for Fama french Methods
+
+The following (along with `date_start`, `date_end`, and an FFEstMethod) are passed to the
+function `make_ff_est_windows!` in order to properly format the DataFrame for use:
+- est_window_start::String="est_window_start"
+- est_window_end::String="est_window_end"
+- suppress_warning::Bool=false
+
+"""
 function calculate_car(
     data::Tuple{AbstractDataFrame, AbstractDataFrame},
     df::AbstractDataFrame;
@@ -34,8 +155,8 @@ function calculate_car(
         crsp,
         [idcol],
         [
-            Conditions(<=, date_start, :retDate),
-            Conditions(>=, date_end, :retDate)
+            Condition(<=, date_start, :retDate),
+            Condition(>=, date_end, :retDate)
         ]
     )
 
@@ -173,9 +294,9 @@ function calculate_car(
     crsp = crsp_data(conn, df; date_start, date_end)
     crspM = crsp_market(
         conn,
-        dateStart = minimum(df[:, date_start]),
-        dateEnd = maximum(df[:, date_end]),
-        col = market_return
+        minimum(df[:, date_start]),
+        maximum(df[:, date_end]);
+        cols=market_return
     )
     return calculate_car(
         (crsp, crspM),
@@ -255,9 +376,9 @@ function calculate_car(
 
     crspM = crsp_market(
         conn,
-        dateStart = minimum(df_temp[:, :dateStart]),
-        dateEnd = maximum(df_temp[:, :dateEnd]),
-        col = market_return,
+        minimum(df_temp[:, :dateStart]),
+        maximum(df_temp[:, :dateEnd]);
+        cols=market_return,
     )
 
     return calculate_car(
@@ -278,7 +399,7 @@ function calculate_car(
     ff_est::FFEstMethod;
     date_start::String="dateStart",
     date_end::String="dateEnd",
-    event_date::String="date",
+    date::String="date",
     est_window_start::String="est_window_start",
     est_window_end::String="est_window_end",
     idcol::String="permno",
@@ -294,7 +415,7 @@ function calculate_car(
         est_window_start,
         est_window_end,
         suppress_warning,
-        event_date
+        date
     )
     crsp_raw = leftjoin(
         crsp_raw,
@@ -337,8 +458,8 @@ function calculate_car(
             df[i, :],
             temp,
             [
-                Conditions(<=, est_window_start, "return_date"),
-                Conditions(>=, est_window_end, "return_date")
+                Condition(<=, est_window_start, "return_date"),
+                Condition(>=, est_window_end, "return_date")
             ]
         )
         df[i, :obs_ff] = sum(fil_ff)
@@ -348,8 +469,8 @@ function calculate_car(
             df[i, :],
             temp,
             [
-                Conditions(<=, date_start, "return_date"),
-                Conditions(>=, date_end, "return_date")
+                Condition(<=, date_start, "return_date"),
+                Condition(>=, date_end, "return_date")
             ]
         )
         temp_event = temp[fil_event, :]
@@ -374,7 +495,7 @@ function calculate_car(
     ff_est::FFEstMethod;
     date_start::String="dateStart",
     date_end::String="dateEnd",
-    event_date::String="date",
+    date::String="date",
     est_window_start::String="est_window_start",
     est_window_end::String="est_window_end",
     idcol::String="permno",
@@ -389,7 +510,7 @@ function calculate_car(
         est_window_start,
         est_window_end,
         suppress_warning,
-        event_date
+        date
     )
     
     temp = df[:, [idcol, est_window_start, est_window_end]]
@@ -420,7 +541,7 @@ function calculate_car(
     ff_ests::Vector{FFEstMethod};
     date_start::String="dateStart",
     date_end::String="dateEnd",
-    event_date::String="date",
+    date::String="date",
     est_window_start::String="est_window_start",
     est_window_end::String="est_window_end",
     idcol::String="permno",
@@ -438,7 +559,7 @@ function calculate_car(
             est_window_start,
             est_window_end,
             idcol,
-            event_date,
+            date,
             suppress_warning
         )
         temp[!, :ff_method] .= repeat([ff_est], nrow(temp))

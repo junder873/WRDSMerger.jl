@@ -1,568 +1,337 @@
-function compustatCrspLink(
-    conn;
-    cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"]
-)
-    col_str = join(cols, ", ")
-    query = """
-        select distinct $col_str
-        from $(default_tables.crsp_a_ccm_ccmxpf_lnkhist)
-        where lpermno IS NOT NULL AND
-        linktype in ('LU', 'LC') AND
-        linkprim in ('P', 'C')       
-    """
-    dfLink = run_sql_query(conn, query) |> DataFrame;
-    if "linkenddt" in cols
-        dfLink[!, :linkenddt] = coalesce.(dfLink[:, :linkenddt], Dates.today())
-    end
-    if "lpermno" in cols
-        rename!(dfLink, :lpermno => :permno)
-    end
-    return dfLink
+
+mutable struct LinkTable
+    table::String # table name
+    id_cols::Vector{String} # id cols as they exist in the database
+    date_col_min::Union{Missing, String} # date column as it is in the database, missing for
+    # cases where the link is 1:1
+    date_col_max::Union{Missing, String} # date column in the database, if missing and min
+    # is not missing, then date_col_min is assumed to be the minimum date until a new
+    # date is specified
+    filters::Dict{String, Any} # filters that will be applied when downloading data
+    type_translations::Vector{Pair{String, Type{<:FirmIdentifier}}} # translate the column
+    # as downloaded to the correct type
 end
 
 
-function compustatCrspLink(
-    conn,
-    vals;
-    id_col::String="gvkey", # either "gvkey" or "lpermno"
-    cols::Array{String}=["gvkey", "lpermno", "linkdt", "linkenddt"]
+LinkTable(::Type{Permno}, ::Type{T}) where {T<:CusipAll} = LinkTable(
+    default_tables["crsp_stocknames"],
+    ["permno", lowercase(string(T))],
+    "namedt",
+    "nameenddt",
+    Dict{String, Any}("ncusip" => missing),
+    ["permno" => Permno, lowercase(string(T)) => T]
 )
-    if length(vals) == 0 || length(vals) > 1000
-        return compustatCrspLink(conn; cols)
+LinkTable(::Type{T}, ::Type{Permno}) where {T<:CusipAll} = LinkTable(Permno, T)
+
+LinkTable(::Type{K}, ::Type{T}) where {K<:CusipAll,T<:CusipAll} = LinkTable(
+    default_tables["crsp_stocknames"],
+    [lowercase(string(K)), lowercase(string(T))],
+    "namedt",
+    "nameenddt",
+    Dict{String, Any}("ncusip" => missing),
+    [lowercase(string(T)) => T, lowercase(string(K)) => K]
+)
+
+LinkTable(::Type{Ticker}, ::Type{T}) where {T<:CusipAll} = LinkTable(
+    default_tables["crsp_stocknames"],
+    ["ticker", lowercase(string(T))],
+    "namedt",
+    "nameenddt",
+    Dict{String, Any}("ncusip" => missing),
+    ["ticker" => "Ticker", lowercase(string(T)) => T]
+)
+LinkTable(::Type{T}, ::Type{Ticker}) where {T<:CusipAll} = LinkTable(Ticker, T)
+
+LinkTable(::Type{Permno}, ::Type{Ticker}) = LinkTable(
+    default_tables["crsp_stocknames"],
+    ["permno", "ticker"],
+    "namedt",
+    "nameenddt",
+    Dict{String, Any}("ncusip" => missing),
+    ["permno" => Permno, "ticker" => Ticker]
+)
+LinkTable(::Type{Ticker}, ::Type{Permno}) = LinkTable(Permno, Ticker)
+
+LinkTable(::Type{Permno}, ::Type{GVKey}) = LinkTable(
+    default_tables["crsp_a_ccm_ccmxpf_lnkhist"],
+    ["lpermno", "gvkey"],
+    "linkdt",
+    "linkenddt",
+    Dict{String, Any}(
+        "linktype" => ["LU", "LC"],
+        "linkprim" => ["P", "C"],
+        "lpermno" => missing
+    ),
+    ["lpermno" => Permno, "gvkey" => GVKey]
+)
+LinkTable(::Type{GVKey}, ::Type{Permno}) = LinkTable(Permno, GVKey)
+
+LinkTable(::Type{Permno}, ::Type{IbesTicker}) = LinkTable(
+    default_tables["wrdsapps_ibcrsphist"],
+    ["ticker", "permno"],
+    "sdate",
+    "edate",
+    Dict{String, Any}(
+        "score" => 1:4,
+        "permno" => missing
+    ),
+    ["permno" => Permno, "ticker" => IbesTicker]
+)
+LinkTable(::Type{IbesTicker}, ::Type{Permno}) = LinkTable(Permno, IbesTicker)
+
+LinkTable(::Type{GVKey}, ::Type{CIK}) = LinkTable(
+    default_tables["comp_company"],
+    ["gvkey", "cik"],
+    missing,
+    missing,
+    Dict{String, Any}(
+        "cik" => missing
+    ),
+    ["gvkey" => GVKey, "cik" => CIK]
+)
+LinkTable(::Type{CIK}, ::Type{GVKey}) = LinkTable(GVKey, CIK)
+
+# generic function to convert a pair into the appropriate table
+LinkTable(x::Pair{Type{<:FirmIdentifier}, Type{<:FirmIdentifier}}) = LinkTable(x[1], x[2])
+
+function Base.merge(
+    t1::LinkTable,
+    t2::LinkTable
+)
+    @assert(t1.table == t2.table)
+    LinkTable(
+        t1.table,
+        vcat(t1.id_cols, t2.id_cols) |> unique,
+        t1.date_col_min,
+        t1.date_col_max,
+        merge(t1.filters, t2.filters),
+        vcat(t1.type_translations, t2.type_translations) |> unique,
+    )
+end
+
+function date_cols(table::LinkTable)
+    x = String[]
+    if !ismissing(table.date_col_min)
+        push!(x, table.date_col_min)
     end
-    if id_col == "permno"
-        id_col = "lpermno"
+    if !ismissing(table.date_col_max)
+        push!(x, table.date_col_max)
     end
-    col_str = join(cols, ", ")
-    fil = if id_col == "gvkey"
-        "('" * join(vals, "', '") * "')"
+    x
+end
+
+"""
+function link_table(
+    conn,
+    table::LinkTable,
+    fil_type::Vector{T}=FirmIdentifier[]
+) where {T<:FirmIdentifier}
+
+Generic function to download data from a linking table
+"""
+function link_table(
+    conn,
+    table::LinkTable,
+    fil_type::Vector{T}=FirmIdentifier[]
+) where {T<:FirmIdentifier}
+    if 0 < length(fil_type) <= 1000
+        table.filters = copy(table.filters)
+        col_str_temp = ""
+        for (col, t) in table.type_translations
+            if t == T
+                col_str_temp = col
+            end
+        end
+        table.filters[col_str_temp] = values.(fil_type)
+    end
+    fil = create_filter(table.filters)
+    col_str = join(vcat(table.id_cols, date_cols(table)), ", ")
+    query = """
+    SELECT DISTINCT $col_str FROM $(table.table)
+    $fil
+    """
+    df = WRDSMerger.run_sql_query(conn, query) |> DataFrame
+    for (col, t) in table.type_translations
+        df[!, col] = t.(df[:, col])
+        rename!(df, col => string(t))
+    end
+    return df
+end
+
+
+"""
+Takes a built tree and converts it into a list of pairs
+"""
+
+function find_item(T::Type{<:FirmIdentifier}, node::FirmIdentifierNode)
+    if node.data == T
+        return node
+    end
+    out = 0
+    for x in node
+
+        if x.data == T
+            out = x
+            break
+        end
+        out = find_item(T, x)
+        if out != 0
+            break
+        end
+    end
+    out
+end
+
+
+function parent_list(node::FirmIdentifierNode; out=Type{<:FirmIdentifier}[])
+    push!(out, node.data)
+    if parent(node) !== nothing
+        return parent_list(parent(node); out)
+    end
+    out
+end
+
+function build_list(T::Type{<:FirmIdentifier}, tree::FirmIdentifierNode)
+    bot_node = find_item(T, tree)
+    out = parent_list(bot_node) |> reverse
+    out2 = Pair{Type{<:FirmIdentifier}, Type{<:FirmIdentifier}}[]
+    for i in 1:length(out)-1
+        push!(out2, out[i] => out[i+1])
+    end
+    out2
+end
+
+
+
+function adjust_date_cols(df::DataFrame, table::LinkTable, date_min::Date, date_max::Date)
+    if ismissing(table.date_col_max) && !ismissing(table.date_col_min)
+        df[!, table.date_col_min] = coalesce.(df[:, table.date_col_min], date_min)
+        sort!(df, [table.id_cols[1], table.date_col_min])
+        gdf = groupby(df, [table.id_cols[1]])
+        df = transform(gdf, table.date_col_min => lead => "date_max")
+        df[!, "date_max"] = coalesce.(df[:, "date_max"] .- Day(1), date_max)# I subtract a day since use <= later
+        table.date_col_max = "date_max"
+    elseif ismissing(table.date_col_min) && ismissing(table.date_col_max)
+        table.date_col_min = "date_min"
+        table.date_col_max = "date_max"
+        df[!, "date_min"] .= date_min
+        df[!, "date_max"] .= date_max
     else
-        "(" * join(vals, ", ") * ")"
-    end
-    query = """
-        select distinct $col_str
-        from $(default_tables.crsp_a_ccm_ccmxpf_lnkhist)
-        where lpermno IS NOT NULL AND
-        linktype in ('LU', 'LC') AND
-        linkprim in ('P', 'C') AND
-        $id_col IN $fil
-    """
-    dfLink = run_sql_query(conn, query) |> DataFrame;
-    if "linkenddt" in cols
-        dfLink[!, :linkenddt] = coalesce.(dfLink[:, :linkenddt], Dates.today())
-    end
-    if "lpermno" in cols
-        rename!(dfLink, :lpermno => :permno)
-    end
-    return dfLink
-end
-
-function ibes_crsp_link(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
-    cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
-    filter_score::Int=4 # maximum of 6
-)
-    col_str = join(cols, ", ")
-    query = """
-        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
-        WHERE score <= $filter_score
-        AND permno IS NOT NULL
-    """
-    df = run_sql_query(conn, query)
-    if "edate" ∈ names(df)
-        df[!, "edate"] = coalesce.(df[:, "edate"], Dates.today())
+        df[!, table.date_col_min] = coalesce.(df[:, table.date_col_min], date_min)
+        df[!, table.date_col_max] = coalesce.(df[:, table.date_col_max], date_max)
     end
     return df
 end
 
-function ibes_crsp_link(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    tickers::Vector{String};
-    cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
-    filter_score::Int=4 # maximum of 6
+
+function unique_tables(
+    list,
+    tables
 )
-    if length(tickers) == 0 || length(tickers) > 1000
-        return ibes_crsp_link(conn; cols, filter_score)
-    end
-
-    col_str = join(cols, ", ")
-    fil = "('" * join(tickers, "', '") * "')"
-
-    query = """
-        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
-        WHERE score <= $filter_score
-        AND permno IS NOT NULL
-        AND ticker IN $fil
-    """
-    df = run_sql_query(conn, query)
-    if "edate" ∈ names(df)
-        df[!, "edate"] = coalesce.(df[:, "edate"], Dates.today())
-    end
-    return df
-end
-
-function ibes_crsp_link(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    permno::Vector{<:Number};
-    cols::Vector{String}=["ticker", "permno", "sdate", "edate", "score"],
-    filter_score::Int=4 # maximum of 6
-)
-    if length(permno) == 0 || length(permno) > 1000
-        return ibes_crsp_link(conn; cols, filter_score)
-    end
-
-    col_str = join(cols, ", ")
-    fil = "(" * join(permno, ", ") * ")"
-
-    query = """
-        SELECT DISTINCT $col_str FROM $(default_tables.ibes_crsp)
-        WHERE score <= $filter_score
-        AND permno IS NOT NULL
-        AND permno IN $fil
-    """
-    df = run_sql_query(conn, query)
-    if "edate" ∈ names(df)
-        df[!, "edate"] = coalesce.(df[:, "edate"], Dates.today())
-    end
-    return df
-end
-
-function cik_to_gvkey(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
-    cols::Array{String}=["gvkey", "cik"]
-)
-    colString = join(cols, ", ")
-    query = "SELECT DISTINCT $colString FROM $(default_tables.comp_company) WHERE cik IS NOT NULL"
-    return run_sql_query(conn, query) |> DataFrame
-end
-
-function cik_to_gvkey(
-    conn,
-    vals::Array{String};
-    id_col::String="cik", # either "cik" or "gvkey"
-    cols::Array{String}=["gvkey", "cik"]
-)
-    if length(vals) == 0 || length(vals) > 1000
-        return cik_to_gvkey(conn; cols)
-    end
-
-    colString = join(cols, ", ")
-    fil_str = join(unique(vals), "', '")
-    query = """
-        SELECT DISTINCT $colString
-        FROM $(default_tables.comp_company)
-        WHERE cik IS NOT NULL
-        AND $id_col IN ('$(fil_str)')
-    """
-    return run_sql_query(conn, query) |> DataFrame
-end
-
-function join_permno_gvkey(
-    conn,
-    df::DataFrame;
-    id_col::String="gvkey",
-    forceUnique::Bool=false,
-    datecol::String="date"
-)
-    comp = unique(compustatCrspLink(conn, df[:, id_col] |> unique; id_col))
-
-    comp[!, :linkdt] = coalesce.(comp[:, :linkdt], minimum(df[:, datecol]))
-
-    try
-        df = range_join(
-            df,
-            comp,
-            [id_col],
-            [
-                (>=, Symbol(datecol), :linkdt),
-                (<=, Symbol(datecol), :linkenddt)
-            ],
-            validate=(false, true)
-        )
-    catch
-        if forceUnique
-            sort!(comp, [:gvkey, :linkdt])
-            for i in 1:size(comp, 1)-1
-                if comp[i, :gvkey] != comp[i+1, :gvkey]
-                    continue
-                end
-                if comp[i+1, :linkdt] <= comp[i, :linkenddt]
-                    comp[i+1, :linkdt] = comp[i, :linkenddt] + Dates.Day(1)
-                    if comp[i+1, :linkenddt] < comp[i+1, :linkdt]
-                        comp[i+1, :linkenddt] = comp[i+1, :linkdt]
-                    end
-                end
-            end
-            validate=(false, true)
+    table_names = String[]
+    out_l = Pair{Type{<:FirmIdentifier}, Type{<:FirmIdentifier}}[]
+    out_tables = LinkTable[]
+    for (l, table) in zip(list, tables)
+        if table.table ∉ table_names
+            push!(out_l, l)
+            push!(out_tables, table)
+            push!(table_names, table.table)
         else
-            validate=(false, false)
-            @warn "There are multiple PERMNOs per GVKEY, be careful on merging with other datasets"
-            @warn "Pass forceUnique=true to the function to prevent this error"
+            i = findfirst(table.table .== table_names)
+            out_tables[i] = merge(out_tables[i], table)
         end
-        df = range_join(
-            df,
-            comp,
-            [id_col],
-            [
-                (>=, Symbol(datecol), :linkdt),
-                (<=, Symbol(datecol), :linkenddt)
-            ];
-            validate
-        )
     end
-    select!(df, Not([:linkdt, :linkenddt]))
-    return df
+    (out_l, out_tables)
 end
 
+"""
+    function link_identifiers(
+        conn,
+        cur_ids::Vector{T},
+        dates::Vector{Date},
+        new_types::Type{<:FirmIdentifier}...;
+        convert_to_values::Bool=true
+    ) where {T<:FirmIdentifier}
 
-function link_identifiers(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    df::DataFrame;
-    cik::Bool=false,
-    ncusip::Bool=false,
-    cusip::Bool=false,
-    gvkey::Bool=false,
-    permno::Bool=false,
-    ticker::Bool=false,
-    ibes_ticker::Bool=false,
-    forceUnique::Bool=false,
-    datecol::String="date",
-    cik_name::String="cik",
-    cusip_name::String="cusip",
-    gvkey_name::String="gvkey",
-    permno_name::String="permno",
-    ncusip_name::String="ncusip",
-    ticker_name::String="ticker",
-    ibes_ticker_name::String="ibes_ticker"
+Provides links between a firm identifier (on a specific date) and
+other firm identifiers provided. Generally, these can then be joined into
+a DataFrame.
 
+This relies on the ability to build a tree from the provided type to other types,
+that function in turn relies on `LinkTable` existing for pairs of functions.
+
+Returns a DataFrame with a column of the ID provided, date, and a column of each
+of the requested identifiers. The identifiers have capitalization that follows the
+type (i.e., the GVKey column will be titled "GVKey").
+
+## Example
+
+```julia
+df = DataFrame(
+    cik=["0001341439", "0000004447", "0000723254"],
+    date=[Date(2020), Date(2019), Date(2020)]
 )
-    df = copy(df)
-    if datecol ∉ names(df)
-        throw("DataFrame must include a date column")
-    end
-    col_count = sum([x in names(df) for x in [cik_name, ncusip_name, cusip_name, gvkey_name, permno_name, ticker_name, ibes_ticker_name]])
-    if col_count == 0
-        throw("DataFrame must include identifying column: cik, cusip, ncusip, gvkey, or permno")
-    end
-    if col_count > 1
-        @warn("Function has a preset order on which key will be used first, it is optimal to start with one key")
-    end
-    if ncusip_name in names(df) && any(length.(df[:, ncusip_name]) .> 8)
-        throw("Cusip or NCusip value must be of length 8 to match CRSP values")
-    end
-    if cusip_name in names(df) && any(length.(df[:, cusip_name]) .> 8)
-        throw("Cusip or NCusip value must be of length 8 to match CRSP values")
-    end
 
-    # Go through a series of checks, makes sure original identifying col is
-    # in the output, there are no missing identifiers, and converts those
-    # that can be strings or numbers (CIK and GVKEY) into the appropriate
-    # format. I also rename all columns to make my life easier later
-    if cik_name in names(df)
-        cik = true
-        identifying_col="cik"
-        rename!(df, cik_name => "cik")
-        identifier_was_int=false
-        if typeof(df[:, "cik"]) <: Array{<:Real}
-            dropmissing!(df, "cik")
-            df[!, "cik"] = lpad.(df[:, "cik"], 10, "0")
-            identifier_was_int=true
+leftjoin(
+    df,
+    link_identifiers(
+        CIK.(df.cik),
+        df.date,
+        Permno,
+        Ticker
+    ),
+    on=["cik" => "CIK", "date"]
+)
+```
+
+"""
+function link_identifiers(
+    conn,
+    cur_ids::Vector{T},
+    dates::Vector{Date},
+    new_types::Type{<:FirmIdentifier}...;
+    convert_to_values::Bool=true
+) where {T<:FirmIdentifier}
+    df = DataFrame(
+        ids=cur_ids,
+        date=dates
+    ) |> unique
+    rename!(df, "ids" => string(T))
+
+    tree = build_tree(T)
+    list = vcat([
+        build_list(T, tree) for T in new_types
+    ]...) |> unique
+    tables = LinkTable.(list)
+    list, tables = unique_tables(list, tables)
+    for (l, table) in zip(list, tables)
+        new_table = link_table(conn, table, collect(skipmissing(df[:, string(l[1])])))
+        if nrow(new_table) == 0
+            continue
         end
-    end
-    if ncusip_name in names(df)
-        ncusip = true
-        identifying_col="ncusip"
-        rename!(df, ncusip_name => "ncusip")
-        identifier_was_int=false
-        dropmissing!(df, "ncusip")
-    end
-    if cusip_name in names(df)
-        cusip = true
-        identifying_col="cusip"
-        rename!(df, cusip_name => "cusip")
-        identifier_was_int=false
-        dropmissing!(df, "cusip")
-    end
-    if gvkey_name in names(df)
-        gvkey = true
-        identifying_col="gvkey"
-        rename!(df, gvkey_name => "gvkey")
-        identifier_was_int=false
-        dropmissing!(df, "gvkey")
-        if typeof(df[:, "gvkey"]) <: Array{<:Real}
-            df[!, "gvkey"] = lpad.(df[:, "gvkey"], 6, "0")
-            identifier_was_int=true
-        end
-    end
-    if permno_name in names(df)
-        permno = true
-        identifying_col="permno"
-        rename!(df, permno_name => "permno")
-        identifier_was_int=true
-        dropmissing!(df, "permno")
-    end
-    if ticker_name in names(df)
-        ticker=true
-        identifying_col="ticker"
-        rename!(df, ticker_name => "ticker")
-        identifier_was_int=false
-        dropmissing!(df, "ticker")
-    end
-    if ibes_ticker_name in names(df)
-        ibes_ticker=true
-        identifying_col="ibes_ticker"
-        rename!(df, ibes_ticker_name => "ibes_ticker")
-        identifier_was_int=false
-        dropmissing!(df, "ibes_ticker")
-    end
-
-
-    if identifying_col == "ibes_ticker"
-        ibes_to_crsp = ibes_crsp_link(
-            conn,
-            df[:, "ibes_ticker"];
-        )
-        df[!, :_temp_min] .= 0 # to use the minimize function in the range join
+        new_table = adjust_date_cols(new_table, table, minimum(df.date), maximum(df.date))
         df = range_join(
             df,
-            ibes_to_crsp,
-            ["ibes_ticker" => "ticker"],
+            new_table,
+            [string(l[1])],
             [
-                Conditions(<=, datecol, "edate"),
-                Conditions(>=, datecol, "sdate")
+                Condition("date", >=, table.date_col_min),
+                Condition("date", <=, table.date_col_max)
             ],
-            validate=(false, true),
-            minimize=["_temp_min" => "score"]
+            validate=(true, false),
+            jointype=:left
         )
-        select!(df, Not(["sdate", "edate", "_temp_min"]))
-        if any([cusip, ncusip, gvkey, cik])
-            temp = link_identifiers(
-                conn,
-                df[:, ["permno", datecol]] |> dropmissing |> unique;
-                cusip,
-                ncusip,
-                gvkey,
-                cik,
-                datecol
-            )
-            df = leftjoin(
-                df,
-                temp,
-                on=["permno", datecol],
-                validate=(false, true),
-                matchmissing=:equal
-            )
-        end
+        select!(df, Not([table.date_col_min, table.date_col_max]))
     end
+    select!(df, unique(string.(vcat([string(T), "date"], [x for x in new_types]))))
 
-    # cik is only easy to link to gvkey, so that must come first
-    if identifying_col == "cik"
-        cik_gvkey = cik_to_gvkey(conn, unique(df[:, "cik"]); id_col="cik")
-        df = leftjoin(
-            df,
-            cik_gvkey,
-            on=["cik"],
-            validate=(false, true)
-        )
-        if any([permno, cusip, ncusip, ticker, ibes_ticker])
-            comp = link_identifiers(
-                conn,
-                df[:, ["gvkey", datecol]] |> dropmissing |> unique;
-                permno,
-                cusip,
-                ncusip,
-                ticker,
-                ibes_ticker,
-                datecol
-            )
-            df = leftjoin(
-                df,
-                comp,
-                on=["gvkey", datecol],
-                validate=(false, true),
-                matchmissing=:equal
-            )
-        end
-    end
-
-    # If gvkey, need to get the link to permno
-    if identifying_col == "gvkey" && any([permno, cusip, ncusip, ibes_ticker, ticker])
-        permno_gvkey = join_permno_gvkey(
-            conn,
-            df;
-            forceUnique,
-            id_col="gvkey",
-            datecol
-        )
-        df = leftjoin(
-            df,
-            permno_gvkey,
-            on=["gvkey", datecol],
-            validate=(false, true)
-        )
-        if any([cusip, ncusip, ticker, ibes_ticker])
-            crsp = link_identifiers(
-                conn,
-                dropmissing(permno_gvkey[:, ["permno", datecol]]) |> unique;
-                ncusip,
-                cusip,
-                ticker,
-                ibes_ticker,
-                datecol
-            )
-            df = leftjoin(
-                df,
-                crsp,
-                on=["permno", datecol],
-                validate=(false, true),
-                matchmissing=:equal
-            )
-        end
-    end
-
-    # If gvkey and need cik
-    if identifying_col == "gvkey" && cik
-        temp = dropmissing(df[:, ["gvkey"]])
-        cik_gvkey = cik_to_gvkey(conn, temp[:, "gvkey"]; id_col="gvkey")
-        dropmissing!(cik_gvkey)
-        df = leftjoin(
-            df,
-            cik_gvkey,
-            on=["gvkey"],
-            validate=(false, true),
-            matchmissing=:equal
-        )
-    end
-
-    # if ncusip or cusip, first need the permno set (which is trivial)
-    # if still need gvkey or cik then permno is necessary
-    if identifying_col ∈ ["ncusip", "cusip", "ticker"]
-        crsp = crsp_stocknames(
-            conn,
-            df[:, identifying_col] |> unique;
-            cusip_col=identifying_col,
-        )
-        crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
-        crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
-        df = range_join(
-            df,
-            crsp,
-            [identifying_col],
-            [
-                (<=, Symbol(datecol), :nameenddt),
-                (>=, Symbol(datecol), :namedt)
-            ],
-            validate=(false, true)
-        )
-        select!(df, Not([:namedt, :nameenddt]))
-        if gvkey || cik || ibes_ticker
-            crsp = link_identifiers(
-                conn,
-                dropmissing(df[:, ["permno", datecol]]) |> unique;
-                cik,
-                gvkey,
-                ibes_ticker,
-                datecol
-            )
-            df = leftjoin(
-                df,
-                crsp,
-                on=["permno", datecol],
-                validate=(false, true),
-                matchmissing=:equal
-            )
-        end
-    end
-
-    # the final case I need to deal with is permno, it is a major link between several
-    # of the datasets
-    if identifying_col == "permno"
-        if ncusip || cusip || ticker
-            crsp = crsp_stocknames(
-                conn,
-                df[:, identifying_col] |> unique;
-            )
-            crsp[!, :namedt] = coalesce.(crsp[:, :namedt], minimum(df[:, datecol]))
-            crsp[!, :nameenddt] = coalesce.(crsp[:, :nameenddt], maximum(df[:, datecol]))
-            df = range_join(
-                df,
-                crsp,
-                [identifying_col],
-                [
-                    (<=, Symbol(datecol), :nameenddt),
-                    (>=, Symbol(datecol), :namedt)
-                ],
-                validate=(false, true)
-            )
-            select!(df, Not([:namedt, :nameenddt]))
-        end
-        if gvkey || cik
-            df = join_permno_gvkey(
-                conn,
-                df;
-                forceUnique,
-                id_col="permno",
-                datecol
-            )
-            if cik
-                comp = link_identifiers(
-                    conn,
-                    df[:, ["gvkey", datecol]] |> dropmissing |> unique;
-                    datecol,
-                    cik
-                )
-                df = leftjoin(
-                    df,
-                    comp,
-                    on=["gvkey", datecol],
-                    validate=(false, true),
-                    matchmissing=:equal
-                )
+    if convert_to_values
+        for col in names(df)
+            if col != "date"
+                df[!, col] = values.(df[:, col])
             end
         end
-        if ibes_ticker
-            ibes_to_crsp = ibes_crsp_link(
-                conn,
-                df[:, "permno"];
-            )
-            rename!(ibes_to_crsp, "ticker" => "ibes_ticker")
-            df[!, :_temp_min] .= 0
-            df = range_join(
-                df,
-                ibes_to_crsp,
-                ["permno"],
-                [
-                    Conditions(<=, datecol, "edate"),
-                    Conditions(>=, datecol, "sdate")
-                ];
-                validate=(false, true),
-                minimize=["score" => "_temp_min"]
-            )
-            select!(df, Not(["sdate", "edate", "_temp_min"]))
-        end
     end
+    df
 
-    clean_up = [
-        (ncusip, "ncusip", ncusip_name),
-        (cusip, "cusip", cusip_name),
-        (gvkey, "gvkey", gvkey_name),
-        (permno, "permno", permno_name),
-        (cik, "cik", cik_name),
-        (ticker, "ticker", ticker_name),
-        (ibes_ticker, "ibes_ticker", ibes_ticker_name)
-    ]
-
-    for (to_include, cur_name, new_name) in clean_up
-        if !to_include && cur_name ∈ names(df)
-            select!(df, Not(cur_name))
-        end
-        if cur_name ∈ names(df) && cur_name != new_name
-            rename!(df, cur_name => new_name)
-        end
-    end
-
-    if identifier_was_int && typeof(df[:, identifying_col]) <: Array{String}
-        df[!, identifying_col] = parse.(Int, df[:, identifying_col])
-    end
-    return df
 end
