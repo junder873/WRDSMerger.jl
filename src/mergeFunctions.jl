@@ -79,6 +79,19 @@ LinkTable(::Type{Permno}, ::Type{IbesTicker}) = LinkTable(
 )
 LinkTable(::Type{IbesTicker}, ::Type{Permno}) = LinkTable(Permno, IbesTicker)
 
+LinkTable(::Type{NCusip}, ::Type{IbesTicker}) = LinkTable(
+    default_tables["wrdsapps_ibcrsphist"],
+    ["ticker", "ncusip"],
+    "sdate",
+    "edate",
+    Dict{String, Any}(
+        "score" => 1:4,
+        "ncusip" => missing
+    ),
+    ["ncusip" => NCusip, "ticker" => IbesTicker]
+)
+LinkTable(::Type{IbesTicker}, ::Type{NCusip}) = LinkTable(NCusip, IbesTicker)
+
 LinkTable(::Type{GVKey}, ::Type{CIK}) = LinkTable(
     default_tables["comp_company"],
     ["gvkey", "cik"],
@@ -136,7 +149,7 @@ function link_table(
 ) where {T<:FirmIdentifier}
     if 0 < length(fil_type) <= 1000
         temp_filter = Dict{String, Any}()
-        for (key, val) in temp.filters
+        for (key, val) in table.filters
             temp_filter[key] = val
         end
         table.filters = temp_filter
