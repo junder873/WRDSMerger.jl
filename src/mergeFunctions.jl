@@ -162,7 +162,6 @@ end
 """
 Takes a built tree and converts it into a list of pairs
 """
-
 function find_item(T::Type{<:FirmIdentifier}, node::FirmIdentifierNode)
     if node.data == T
         return node

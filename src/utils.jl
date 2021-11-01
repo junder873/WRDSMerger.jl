@@ -364,7 +364,6 @@ function range_join(
     sizehint!(res_left, max(nrow(df1), nrow(df2)))
     sizehint!(res_right, max(nrow(df1), nrow(df2)))
 
-
     gdf = groupby(df2, on2)
 
     idx = gdf.idx
