@@ -3,7 +3,7 @@
 # Installation
 From the Julia REPL:
 ```julia
-julia> ]add hWRDSMerger
+julia> ]add WRDSMerger
 ```
 
 ```julia
@@ -71,7 +71,14 @@ crsp_delist
 crsp_adjust
 ```
 
+# Merge
+```@docs
+link_identifiers
+```
+
 # Utilities
 ```@docs
 range_join
+check_schema_perms
+approx_row_count
 ```
