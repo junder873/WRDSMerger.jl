@@ -333,11 +333,13 @@ function range_join(
         )
     end
 
-    df1 = df1[:, :]
-    df2 = df2[:, :]
-    df2[!, :_index2] = 1:nrow(df2)
+
 
     on1, on2 = parse_ons(on)
+
+    df1 = sort(df1, on1)
+    df2 = df2[:, :]
+    df2[!, :_index2] = 1:nrow(df2)
 
     if minimize !== nothing
         min1, min2 = parse_ons(minimize)
@@ -350,12 +352,13 @@ function range_join(
     else
         repeat([Int[]], nrow(df1))
     end
-
+    def = df2[1:0, :]
+    temp = def[:, :]
     # similar to the calc functions, I found that threading here often
     # made things a lot slower since there was a lot of time spent
     # garbage collecting instead of running the function
     # threading can help, but perhaps the costs outweigh the benefits
-    for i in 1:nrow(df1)
+    for (i, key) in enumerate(Tuple.(copy.(eachrow(df1[:, on1]))))
         # looking at the source code for "get", it is just running a try -> catch
         # function, so if I could pre-identify the cases where this will fail
         # I can avoid the try -> catch altogether
@@ -363,8 +366,13 @@ function range_join(
         # results allow me to "skipmissing" in a way
         # I did try testing this with a leftjoin before the loop, on a medium sample
         # (~100,000 rows), it was 4 times slower, so need better method
+        # if i == 1 || df1[i, on1] != df1[i, on1]
+        #     temp = get(gdf, Tuple(df1[i, on1]), def)
+        # end
+        # nrow(temp) == 0 && continue
+
         try
-            temp = gdf[Tuple(df1[i, on1])]
+            temp = gdf[key]
         catch
             continue
         end

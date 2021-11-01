@@ -215,6 +215,54 @@ function join_permno_gvkey(
 end
 
 
+"""
+    function link_identifiers(
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        df::DataFrame;
+    )
+
+Provides links between the main identifiers in the WRDS universe, the provided
+DataFrame must include one identifier and a date (since most links are only
+valid for a specific range of dates).
+
+# Arguments
+
+## Additional Identifiers
+
+The identifiers that are included in the DataFrame are automatically truned to `true`.
+The other options are:
+- `cik::Bool=false`: (Central Index Key) is a common identifier, while it is typically a String,
+    it can also be an Integer
+- `ncusip::Bool=false`: NCusips are historical identifiers that link between many datasets
+- `cusip::Bool=false`: Cusips are similar to NCusips but are updated over time, NCusips are not
+- `gvkey::Bool=false`: GVKeys are the common identifier in the Compustat universe
+- `permno::Bool=false`: Permnos are the common identifier in the CRSP universe
+- `ticker::Bool=false`: Tickers based on the ticker in the stock exchange, uses CRSP Stocknames
+    to link to other identifiers
+- `ibes_ticker::Bool=false`: The primary link in the IBES universe
+
+## Column Name Options
+
+These rename specific columns that have a different identifier name,
+this is a finicky feature, it works fine if the new name is completely different
+from any of the others, it sometimes works if the new name is the same as another
+column.
+
+- `cik_name::String="cik"`
+- `cusip_name::String="cusip"`
+- `gvkey_name::String="gvkey"`
+- `permno_name::String="permno"`
+- `ncusip_name::String="ncusip"`
+- `ticker_name::String="ticker"`
+- `ibes_ticker_name::String="ibes_ticker"`
+
+## Other Column Options
+
+- `forceUnique::Bool=false`: Sometimes the link between permno and gvkey is not unique,
+    This forces the link to be unique
+- `datecol::String="date"`: The column that has the relevant date for when to measure the link
+
+"""
 function link_identifiers(
     conn::Union{LibPQ.Connection, DBInterface.Connection},
     df::DataFrame;
@@ -403,7 +451,7 @@ function link_identifiers(
         if any([cusip, ncusip, ticker, ibes_ticker])
             crsp = link_identifiers(
                 conn,
-                dropmissing(permno_gvkey[:, ["permno", datecol]]) |> unique;
+                dropmissing(df[:, ["permno", datecol]]) |> unique;
                 ncusip,
                 cusip,
                 ticker,
