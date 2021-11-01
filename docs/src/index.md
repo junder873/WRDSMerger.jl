@@ -42,8 +42,8 @@ The third method is if you download the data to your own database, such as a SQL
 
 ```julia
 conn = SQLite.DB("db.sqlite")
-WRDSMerger.default_tables.comp_funda = "compa_funda"
-WRDSMerger.default_tables.comp_fundq = "compa_fundq"
+WRDSMerger.default_tables["comp_funda"] = "compa_funda"
+WRDSMerger.default_tables["comp_fundq"] = "compa_fundq"
 ...
 ```
 

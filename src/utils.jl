@@ -80,7 +80,7 @@ function ff_data(
 )
     col_str = join(cols, ", ")
     query = """
-        SELECT $col_str FROM $(default_tables.ff_factors)
+        SELECT $col_str FROM $(default_tables["ff_factors"])
         WHERE date BETWEEN '$date_start' AND '$date_end'
     """
     return run_sql_query(conn, query)
@@ -113,22 +113,6 @@ function run_sql_query(
     return temp
 end
 
-mutable struct TableDefaults
-    comp_funda::String
-    comp_fundq::String
-    comp_company::String
-    crsp_stock_data::String
-    crsp_index::String
-    crsp_delist::String
-    crsp_stocknames::String
-    crsp_a_ccm_ccmxpf_lnkhist::String
-    ibes_crsp::String
-    ff_factors::String
-end
-
-
-    
-
 struct Conditions
     fun::Function
     l::Union{Symbol, String}
@@ -157,9 +141,6 @@ function Conditions(
     )
 end
 
-buy_hold_return(x) = prod(x .+ 1)
-bhar_calc(firm, market) = buy_hold_return(firm) - buy_hold_return(market)
-
 function range_join(
     df1::DataFrame,
     df2::DataFrame,
@@ -170,6 +151,16 @@ function range_join(
     validate::Tuple{Bool, Bool}=(false, false),
     joinfun::Function=leftjoin
 )
+    jointype = if joinfun == leftjoin
+        :left
+    elseif joinfun == rightjoin
+        :right
+    elseif joinfun == innerjoin
+        :inner
+    else
+        :outer
+    end
+        
     range_join(
         df1,
         df2,
@@ -177,8 +168,8 @@ function range_join(
         Conditions.(conditions);
         minimize,
         join_conditions,
-        validate,
-        joinfun
+        validate=(validate[2], validate[1]),
+        jointype
     )
 end
 
@@ -232,6 +223,39 @@ function filter_data(
     return fil
 end
 
+"""
+I need the keymap returned instead of the full
+SubDataFrame
+"""
+function special_get(gdf, key)
+    if haskey(gdf.keymap, key)
+        x = gdf.keymap[key]
+        return (gdf.starts[x], gdf.ends[x])
+    else
+        return (0, 0)
+    end
+end
+
+r_col_names(x::Conditions) = x.r
+l_col_names(x::Conditions) = x.l
+
+function validate_error(df)
+    if nrow(df) > 0
+        if nrow(df) == 1
+            error_message = "df1 contains 1 duplicate key: " *
+                            "$(NamedTuple(df[1, :])). "
+        elseif nrow(df) == 2
+            error_message = "df1 contains 2 duplicate keys: " *
+                            "$(NamedTuple(df[1, :])) and " *
+                            "$(NamedTuple(df[2, :])). "
+        else
+            error_message = "df1 contains $(nrow(df)) duplicate keys: " *
+                            "$(NamedTuple(df[1, :])), ..., " *
+                            "$(NamedTuple(df[end, :])). "
+        end
+        error(error_message)
+    end
+end
 
 """
 
@@ -239,11 +263,11 @@ end
         df1::DataFrame,
         df2::DataFrame,
         on,
-        conditions::Array{Tuple{Function, Symbol, Symbol}};
+        conditions::Array{Conditions};
         minimize=nothing,
         join_conditions::Union{Array{Symbol}, Symbol}=:and,
         validate::Tuple{Bool, Bool}=(false, false),
-        joinfun::Function=leftjoin
+        jointype::Symbol=:inner
     )
 Joins the dataframes based on a series of conditions, designed
 to work with ranges
@@ -252,11 +276,13 @@ to work with ranges
 - `df1::DataFrame`: left DataFrame
 - `df2::DataFrame`: right DataFrame
 - `on`: either array of column names or matched pairs
-- `conditions::Array{Tuple{Function, Symbol, Symbol}}`: array of tuples where the tuple is (Function, left dataframe column symbol, right dataframe column symbol)
-- `joinfun::Function=leftjoin`: function being performed
+- `conditions::Array{Conditions}`: array of `Conditions`, which specifies the function (<=, >, etc.), left and right columns
+- `jointype::Symbol=:inner`: type of join, options are :inner, :outer, :left, and :right
 - `minimize`: either `nothing` or an array of column names or matched pairs, minimization will take place in order
 - `join_conditions::Union{Array{Symbol}, Symbol}`: defaults to `:and`, otherwise an array of symbols that is 1 less than the length of conditions that the joins will happen in (:or or :and)
-- `validate::Tuple{Bool, Bool}`: Whether to validate a 1:1, many:1, or 1:many match
+- `validate::Tuple{Bool, Bool}`: Whether to validate, this works differently than the equivalent in DataFrames joins,
+  here, validate insures that a single row from the dataframe is not duplicated. So validate=(true, false) means that
+  there are no duplicated rows from the left dataframe in the result.
 
 ### Example
 
@@ -276,8 +302,8 @@ range_join(
     df2,
     [:firm],
     [
-        (<, :date, :date_high),
-        (>, :date, :date_low)
+        Conditions(<, :date, :date_high),
+        Conditions(>, :date, :date_low)
     ],
     join_conditions=[:and]
 )
@@ -293,251 +319,165 @@ function range_join(
     minimize=nothing,
     join_conditions::Union{Array{Symbol}, Symbol}=:and,
     validate::Tuple{Bool, Bool}=(false, false),
-    joinfun::Function=leftjoin,
-    drop_col=:right # either right or left
+    jointype::Symbol=:inner,
 )
 
-    if nrow(df1) > nrow(df2) # the fewer main loops this goes through
+    if nrow(df1) > nrow(df2) && minimize === nothing
+        # the fewer main loops this goes through
         # the faster it is overall, if they are about equal
         # this likely slows things down, but it is
         # significantly faster if it is flipped for large sets
+        # I added minimize === nothing since, under the current setup
+        # the minimization is done as minimize assumes a groupby on
+        # the left, so it does not work properly if this goes through
+        # one thought on how to fix that is to create a minimize object
+        # that would allow for setting the condition under which
+        # minimizaiton makes sense
         new_cond = Conditions[]
         for con in conditions
             push!(new_cond, Conditions(change_function(con.fun), con.r, con.l))
         end
         on1, on2 = parse_ons(on)
-        if minimize !== nothing
-            min1, min2 = parse_ons(minimize)
-            new_min = min2 .=> min1
+        new_join = if jointype == :left
+            new_join = :right
+        elseif jointype == :right
+            new_join = :left
         else
-            new_min=nothing
+            new_join = jointype
         end
-        if joinfun == leftjoin
-            new_join = rightjoin
-        elseif joinfun == rightjoin
-            new_join = leftjoin
-        else
-            new_join = joinfun
-        end
-        new_drop = drop_col == :right ? :left : :right
         return range_join(
             df2,
             df1,
             on2 .=> on1,
             new_cond;
-            minimize=new_min,
             join_conditions,
             validate=(validate[2], validate[1]),
-            joinfun=new_join,
-            drop_col=new_drop
+            jointype=new_join,
         )
     end
 
+    on1, on2 = WRDSMerger.parse_ons(on)
 
+    res_left = Int[]
+    res_right = Int[]
 
-    on1, on2 = parse_ons(on)
-
-    df1 = sort(df1, on1)
-    df2 = df2[:, :]
-    df2[!, :_index2] = 1:nrow(df2)
-
-    if minimize !== nothing
-        min1, min2 = parse_ons(minimize)
-    end
+    sizehint!(res_left, max(nrow(df1), nrow(df2)))
+    sizehint!(res_right, max(nrow(df1), nrow(df2)))
 
     gdf = groupby(df2, on2)
 
-    df1[!, :_index2] = if joinfun == leftjoin || joinfun == outerjoin
-        repeat([[0]], nrow(df1))
-    else
-        repeat([Int[]], nrow(df1))
-    end
-    def = df2[1:0, :]
-    temp = def[:, :]
-    # similar to the calc functions, I found that threading here often
-    # made things a lot slower since there was a lot of time spent
-    # garbage collecting instead of running the function
-    # threading can help, but perhaps the costs outweigh the benefits
+    idx = gdf.idx
+
+
+    # under the current setup, I do not think threading will work here
     for (i, key) in enumerate(Tuple.(copy.(eachrow(df1[:, on1]))))
-        # looking at the source code for "get", it is just running a try -> catch
-        # function, so if I could pre-identify the cases where this will fail
-        # I can avoid the try -> catch altogether
-        # for example, maybe doing a leftjoin before the loop and running through those
-        # results allow me to "skipmissing" in a way
-        # I did try testing this with a leftjoin before the loop, on a medium sample
-        # (~100,000 rows), it was 4 times slower, so need better method
-        # if i == 1 || df1[i, on1] != df1[i, on1]
-        #     temp = get(gdf, Tuple(df1[i, on1]), def)
-        # end
-        # nrow(temp) == 0 && continue
 
-        try
-            temp = gdf[key]
-        catch
-            continue
-        end
+        s, e = special_get(gdf, key)
 
-        fil = filter_data(
-            df1[i, :],
-            temp,
-            conditions;
-            join_conditions
-        )
+        e == 0 && continue
 
 
-        if minimize !== nothing && sum(fil) > 1
-            temp = temp[fil, :]
-            for j in 1:length(min1)
-
-                x = argmin(abs.(df1[i, min1[j]] .- temp[:, min2[j]]))
-
-                temp = temp[temp[:, min2[j]] .== temp[x, min2[j]], :]
-            end
-            fil = ones(Bool, nrow(temp))
-        end
-
-        if sum(fil) > 0
-            df1[i, :_index2] = temp[fil, :_index2]
-            if validate[2] && sum(fil) > 1
-                error("More than one match at row $(temp[fil, :_index2]) in df2")
-            end
-        end
-
-
-    end
-
-    df1 = flatten(df1, :_index2)
-    if drop_col == :right
-        select!(df2, Not(on2))
-    else
-        select!(df1, Not(on1))
-    end
-    df1 = joinfun(df1, df2, on=:_index2, validate=(validate[1], true))
-    select!(df1, Not([:_index2]))
-
-
-    return df1
-end
-
-function parse_expression(
-    expression::Expr
-)
-    out = Expr[]
-    if expression.head == :call || expression.head == :comparison
-        push!(out, expression)
-        return out
-    end
-    for a in expression.args
-        if a.head == :&& || a.head == :||
-            out = vcat(out, parse_expression(a))
-        else a.head == :call
-            push!(out, a)
-        end
-    end
-    return out
-end
-
-function return_function(
-    val::Symbol
-)
-    if val == :<
-        return <
-    elseif val == :>
-        return >
-    elseif val == :<=
-        return <=
-    elseif val == :>=
-        return >=
-    else
-        error("Function Symbol must be a comparison")
-    end
-end
-
-function reverse_return_function(
-    val::Symbol
-)
-    if val == :<
-        return return_function(:>)
-    elseif val == :>
-        return return_function(:<)
-    elseif val == :<=
-        return return_function(:>=)
-    elseif val == :>=
-        return return_function(:<=)
-    else
-        error("Function Symbol must be a comparison")
-    end
-end
-
-function push_condition!(
-    conditions::Array{Tuple{Function, Symbol, Symbol}},
-    f::Symbol,
-    first::Expr,
-    second::Expr
-)
-    if first.args[1] == :left && second.args[1] == :right
-        push!(
-            conditions,
-            (
-                return_function(f),
-                eval(first.args[2]),
-                eval(second.args[2])
+        fil = if join_conditions == :and
+            broadcast(
+                &,
+                [
+                    broadcast(
+                        condition.fun,
+                        df1[i, condition.l],
+                        df2[idx[s:e], condition.r]
+                    )
+                    for condition in conditions
+                ]...
             )
-        )
-    elseif first.args[1] == :right && second.args[1] == :left
-        push!(
-            conditions,
-            (
-                reverse_return_function(f),
-                eval(second.args[2]),
-                eval(first.args[2])
+        elseif join_conditions == :or
+            broadcast(
+                |,
+                [
+                    broadcast(
+                        condition.fun,
+                        df1[i, condition.l],
+                        df2[idx[s:e], condition.r]
+                    )
+                    for condition in conditions
+                ]...
             )
-        )
-    else
-        error("Comparison must have right and left as labels")
-    end
-end
-
-function expressions_to_conditions(
-    expressions::Array{Expr}
-)
-    out = Tuple{Function, Symbol, Symbol}[]
-    for x in expressions
-        if x.head == :call
-            push_condition!(
-                out,
-                x.args[1],
-                x.args[2],
-                x.args[3]
+        else
+            WRDSMerger.filter_data(
+                df1[i, :],
+                df2[idx[s:e], :],
+                conditions;
+                join_conditions
             )
-        elseif x.head == :comparison
-            for i in 1:2:length(x.args)-1
-                push_condition!(
-                    out,
-                    x.args[i+1],
-                    x.args[i],
-                    x.args[i+2]
-                )
-            end
         end
+
+        sum(fil) == 0 && continue
+        cur = length(res_left)
+        to_grow = sum(fil) + cur
+        resize!(res_left, to_grow)
+        resize!(res_right, to_grow)
+        res_left[cur+1:end] .= i
+        @inbounds res_right[cur+1:end] = idx[s:e][fil]
+
+
     end
-    return out
-end
-            
-
-
-
-
-
-function parse_expr(fil)
-    fil = string(fil)
-    for (s, r) in [("||", ") .| ("), ("&&", ") .& ("), ("<", ".<"), (">", ".>"), (r"left\.([^\s]*)", s"df1[i, :\1]"), (r"right\.([^\s]*)", s"temp[:, :\1]")]
-        fil = replace(fil, s => r)
+    if minimize !== nothing
+        min1, min2 = parse_ons(minimize)
+        df_temp = hcat(
+            df1[res_left, string.(min1) |> unique],
+            df2[res_right, string.(min2) |> unique]
+        )
+        df_temp[!, :_idx_left] = res_left
+        df_temp[!, :_idx_right] = res_right
+        for (l, r) in zip(min1, min2)
+            #group_col = x.group_col_left ? :_idx_left : :_idx_right
+            group_col = :_idx_left
+            df_temp = subset(
+                groupby(df_temp, group_col),
+                [l, r] =>
+                (l, r) -> abs.(l .- r) .== minimum(abs.(l .- r))
+            )
+        end
+        res_left = df_temp[:, :_idx_left]
+        res_right = df_temp[:, :_idx_right]
     end
-    fil = "($fil)"
-    Meta.parse(fil)
-end
+    df = if jointype == :right
+        hcat(df2[res_right, :], select(df1[res_left, :], Not(on1)))
+    else
+        hcat(df1[res_left, :], select(df2[res_right, :], Not(on2)))
+    end
 
+    if any(validate)
+        df[!, :_idx_left] = res_left
+        df[!, :_idx_right] = res_right
+        if validate[1]
+            cols = string.(vcat(on1, l_col_names.(conditions))) |> unique
+            temp = df[nonunique(df[:, [:_idx_left]]), cols]
+            validate_error(temp)
+        end
+    
+        if validate[2]
+            cols = string.(vcat(on1, r_col_names.(conditions))) |> unique
+            temp = df[nonunique(df[:, [:_idx_right]]), cols]
+            validate_error(temp)
+        end
+        select!(df, Not([:_idx_left, :_idx_right]))
+    end
+
+    if jointype == :left || jointype == :outer
+        idx_l_add = DataFrames.find_missing_idxs(res_left, nrow(df1))
+        temp = df1[idx_l_add, :]
+        insertcols!(temp, [col => missing for col in names(df) if col ∉ names(temp)]...)
+        df = vcat(df, temp)
+    end
+    if jointype == :right || jointype == :outer
+        idx_r_add = DataFrames.find_missing_idxs(res_right, nrow(df2))
+        temp = df2[idx_r_add, :]
+        insertcols!(temp, [col => missing for col in names(df) if col ∉ names(temp)]...)
+        df = vcat(df, temp)
+    end
+
+    return df
+end
 
 function parse_ons(on)
     on1 = String[]
@@ -554,36 +494,159 @@ function parse_ons(on)
     return on1, on2
 end
 
-function join_helper(
-    df1,
-    df2,
-    on,
-    conditions,
-    args...
-)
-    #new_conditions = conditions |> parse_expression |> expressions_to_conditions
-    quote
-        $range_join(
-            $df1,
-            $df2,
-            $on,
-            $conditions;
-            $(args...)
-        )
-    end
-end
+# I wrote this macro a while ago, do not know if it currently works
+# function parse_expression(
+#     expression::Expr
+# )
+#     out = Expr[]
+#     if expression.head == :call || expression.head == :comparison
+#         push!(out, expression)
+#         return out
+#     end
+#     for a in expression.args
+#         if a.head == :&& || a.head == :||
+#             out = vcat(out, parse_expression(a))
+#         else a.head == :call
+#             push!(out, a)
+#         end
+#     end
+#     return out
+# end
 
-macro join(
-    df1,
-    df2,
-    on,
-    conditions,
-    args...
-)
-    local new_conditions = conditions |> parse_expression |> expressions_to_conditions
-    #local aakws = [esc(a) for a in args]
-    esc(join_helper(df1, df2, on, new_conditions, args...))
-end
+# function return_function(
+#     val::Symbol
+# )
+#     if val == :<
+#         return <
+#     elseif val == :>
+#         return >
+#     elseif val == :<=
+#         return <=
+#     elseif val == :>=
+#         return >=
+#     else
+#         error("Function Symbol must be a comparison")
+#     end
+# end
+
+# function reverse_return_function(
+#     val::Symbol
+# )
+#     if val == :<
+#         return return_function(:>)
+#     elseif val == :>
+#         return return_function(:<)
+#     elseif val == :<=
+#         return return_function(:>=)
+#     elseif val == :>=
+#         return return_function(:<=)
+#     else
+#         error("Function Symbol must be a comparison")
+#     end
+# end
+
+# function push_condition!(
+#     conditions::Array{Tuple{Function, Symbol, Symbol}},
+#     f::Symbol,
+#     first::Expr,
+#     second::Expr
+# )
+#     if first.args[1] == :left && second.args[1] == :right
+#         push!(
+#             conditions,
+#             (
+#                 return_function(f),
+#                 eval(first.args[2]),
+#                 eval(second.args[2])
+#             )
+#         )
+#     elseif first.args[1] == :right && second.args[1] == :left
+#         push!(
+#             conditions,
+#             (
+#                 reverse_return_function(f),
+#                 eval(second.args[2]),
+#                 eval(first.args[2])
+#             )
+#         )
+#     else
+#         error("Comparison must have right and left as labels")
+#     end
+# end
+
+# function expressions_to_conditions(
+#     expressions::Array{Expr}
+# )
+#     out = Tuple{Function, Symbol, Symbol}[]
+#     for x in expressions
+#         if x.head == :call
+#             push_condition!(
+#                 out,
+#                 x.args[1],
+#                 x.args[2],
+#                 x.args[3]
+#             )
+#         elseif x.head == :comparison
+#             for i in 1:2:length(x.args)-1
+#                 push_condition!(
+#                     out,
+#                     x.args[i+1],
+#                     x.args[i],
+#                     x.args[i+2]
+#                 )
+#             end
+#         end
+#     end
+#     return out
+# end
+            
+
+
+
+
+
+# function parse_expr(fil)
+#     fil = string(fil)
+#     for (s, r) in [("||", ") .| ("), ("&&", ") .& ("), ("<", ".<"), (">", ".>"), (r"left\.([^\s]*)", s"df1[i, :\1]"), (r"right\.([^\s]*)", s"temp[:, :\1]")]
+#         fil = replace(fil, s => r)
+#     end
+#     fil = "($fil)"
+#     Meta.parse(fil)
+# end
+
+
+
+
+# function join_helper(
+#     df1,
+#     df2,
+#     on,
+#     conditions,
+#     args...
+# )
+#     #new_conditions = conditions |> parse_expression |> expressions_to_conditions
+#     quote
+#         $range_join(
+#             $df1,
+#             $df2,
+#             $on,
+#             $conditions;
+#             $(args...)
+#         )
+#     end
+# end
+
+# macro join(
+#     df1,
+#     df2,
+#     on,
+#     conditions,
+#     args...
+# )
+#     local new_conditions = conditions |> parse_expression |> expressions_to_conditions
+#     #local aakws = [esc(a) for a in args]
+#     esc(join_helper(df1, df2, on, new_conditions, args...))
+# end
 
 function make_ff_est_windows!(
     df,
@@ -592,7 +655,7 @@ function make_ff_est_windows!(
     date_end::String="dateEnd",
     est_window_start::String="est_window_start",
     est_window_end::String="est_window_end",
-    event_date::String="date",
+    date::String="date",
     suppress_warning::Bool=false
 )
     if ismissing(ff_est.event_window)
@@ -612,8 +675,8 @@ function make_ff_est_windows!(
         # if the estimation window has business days, adjust the event
         # date to a business day
         to_bday = typeof(ff_est.event_window.s) == BDay ? BDay(0, ff_est.event_window.s.calendar) : Day(0)
-        df[!, date_start] = df[:, event_date] .+ to_bday .+ ff_est.event_window.s
-        df[!, date_end] = df[:, event_date] .+ to_bday .+ ff_est.event_window.e
+        df[!, date_start] = df[:, date] .+ to_bday .+ ff_est.event_window.s
+        df[!, date_end] = df[:, date] .+ to_bday .+ ff_est.event_window.e
     end
 
     if ismissing(ff_est.estimation_window)
