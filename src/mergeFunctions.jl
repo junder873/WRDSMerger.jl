@@ -345,7 +345,7 @@ function link_identifiers(
     if convert_to_values
         for col in names(df)
             if col != "date"
-                df[!, col] = values.(df[:, col])
+                df[!, col] = value.(df[:, col])
             end
         end
     end

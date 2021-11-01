@@ -242,7 +242,10 @@ Base.show(io::IOContext, id::FirmIdentifierString) = show(io, convert(String, id
 # Base.print(io::IOContext, x::GVKey) = print(io, x.val)
 Base.string(id::FirmIdentifierString) = convert(String, id)
 Base.tryparse(::Type{T}, s::AbstractString) where {T<:FirmIdentifierString} = try T(s) catch nothing end
-Base.values(id::FirmIdentifierString) = convert(String, id)
+value(id::FirmIdentifierString) = convert(String, id)
+
+# Special "value" parameter for CusipAll so it can return 9 characters
+value(id::CusipAll, l::Int=8) = "$(x.issuer)$(x.issue)$(x.checksum)"[1:l]
 
 Base.promote_rule(::Type{T}, ::Type{K}) where {T<:FirmIdentifierString,K<:AbstractString} = K
 
@@ -259,7 +262,7 @@ Base.isless(id1::FirmIdentifierInt, id2::FirmIdentifierInt) = isless(convert(Int
 
 Base.show(io::IOContext, id::FirmIdentifierInt) = show(io, convert(Int, id))
 Base.string(id::FirmIdentifierInt) = string(convert(Int, id))
-Base.values(id::FirmIdentifierInt) = convert(Int, id)
+value(id::FirmIdentifierInt) = convert(Int, id)
 
 Base.promote_rule(::Type{T}, ::Type{K}) where {T<:FirmIdentifierInt,K<:Real} = K
 Base.tryparse(::Type{T}, s::AbstractString) where {T<:FirmIdentifierInt} = try T(parse(Int, s)) catch nothing end
