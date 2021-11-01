@@ -3,7 +3,7 @@
 # Installation
 From the Julia REPL:
 ```julia
-julia> ]add hWRDSMerger
+julia> ]add WRDSMerger
 ```
 
 ```julia
