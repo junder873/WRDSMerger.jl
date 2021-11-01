@@ -94,6 +94,16 @@ These types are also easily extandable. The current built-in types are:
 
 If there is another identifier that is not provided, all that is required is to specify a new type, subtyping the abstract type `FirmIdentifier`, a `convert` function that converts the new type to an `Integer` or `String`, and a  `LinkTable` that connects the new identifier to one of the existing identifiers. With those three, the merge function should work automatically.
 
+#### Type Standardization
+
+Using these types can also help to standardize your dataset. For example, Cusips can vary by database and be 8 or 9 characters. For example, RavenPack uses 9 digit Cusips while most of CRSP uses 8 digits. There are many ways to standardize, but using the types you can run:
+```julia
+df1[!, :cusip] = WRDSMerger.value.(Cusip.(df1[:, :cusip]))
+df2[!, :cusip] = WRDSMerger.value.(Cusip.(df2[:, :cusip]))
+```
+
+This will check that the Cusip is valid (at least according to the checksum, not that it exists in a database) and converts it to an 8 digit Cusip. If you want 9 digits, then `WRDSMerger.value` accepts an optinal length argument, so run `WRDSMerger.value.(Cusip.(df1[:, :cusip]), 9)`.
+
 ### Calculating Abnormal Returns
 
 Another common task is calculating abnormal returns around a firm event, such as an earnings announcement or when a firm enters the S&P 500. This package provides a variety of functions to calculate those, ranging from simple returns relative to the market to Fama-French 4 factor models. First, you need a DataFrame with identifiers (should be Permno) and the event dates:

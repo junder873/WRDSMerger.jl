@@ -159,7 +159,7 @@ function link_table(
                 col_str_temp = col
             end
         end
-        table.filters[col_str_temp] = values.(fil_type)
+        table.filters[col_str_temp] = value.(fil_type)
     end
     fil = create_filter(table.filters)
     col_str = join(vcat(table.id_cols, date_cols(table)), ", ")

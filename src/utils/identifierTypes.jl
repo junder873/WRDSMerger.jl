@@ -245,7 +245,7 @@ Base.tryparse(::Type{T}, s::AbstractString) where {T<:FirmIdentifierString} = tr
 value(id::FirmIdentifierString) = convert(String, id)
 
 # Special "value" parameter for CusipAll so it can return 9 characters
-value(id::CusipAll, l::Int=8) = "$(x.issuer)$(x.issue)$(x.checksum)"[1:l]
+value(x::CusipAll, l::Int=8) = "$(x.issuer)$(x.issue)$(x.checksum)"[1:l]
 
 Base.promote_rule(::Type{T}, ::Type{K}) where {T<:FirmIdentifierString,K<:AbstractString} = K
 
@@ -267,6 +267,9 @@ value(id::FirmIdentifierInt) = convert(Int, id)
 Base.promote_rule(::Type{T}, ::Type{K}) where {T<:FirmIdentifierInt,K<:Real} = K
 Base.tryparse(::Type{T}, s::AbstractString) where {T<:FirmIdentifierInt} = try T(parse(Int, s)) catch nothing end
 Base.hash(id::FirmIdentifierInt) = hash(convert(Int, id))
+
+# to prevent errors for missing data
+value(x::Missing) = missing
 
 ######################################################################################
 # Future notes: One thing that would be nice is if I could specify `isequal` for
