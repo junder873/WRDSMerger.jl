@@ -1,6 +1,7 @@
 """
-function list_libraries(conn::Union{LibPQ.Connection, 
-                    DBInterface.Connection})::DataFrame
+    function list_libraries(conn::Union{LibPQ.Connection, 
+        DBInterface.Connection}
+    )::DataFrame
 
 Load the list of Postgres schemata
 the user has permission to access
@@ -23,8 +24,9 @@ end
 
 
 """
-function check_schema_perms(conn::Union{LibPQ.Connection, 
-                DBInterface.Connection}, library::String)::Bool
+    function check_schema_perms(conn::Union{LibPQ.Connection, 
+        DBInterface.Connection}, library::String
+    )::Bool
 Verify that the user can access a schema
 """
 function check_schema_perms(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String)::Bool
@@ -43,8 +45,9 @@ function check_schema_perms(conn::Union{LibPQ.Connection, DBInterface.Connection
 end
 
 """
-function list_tables(conn::Union{LibPQ.Connection, 
-            DBInterface.Connection}, library::String)::DataFrame
+    function list_tables(conn::Union{LibPQ.Connection, 
+            DBInterface.Connection}, library::String
+    )::DataFrame
 
 List all of the views/tables/foreign tables within a schema
 """
@@ -57,8 +60,9 @@ function list_tables(conn::Union{LibPQ.Connection, DBInterface.Connection}, libr
 end
 
 """
-function approx_row_count(conn::Union{LibPQ.Connection,
-             DBInterface.Connection}, library::String, table::String)::Int
+    function approx_row_count(conn::Union{LibPQ.Connection,
+        DBInterface.Connection}, library::String, table::String
+    )::Int
 
 Get an approximate count of the number of rows in a table
 """
@@ -77,9 +81,10 @@ end
 
 
 """
-function describe_table(conn::Union{LibPQ.Connection, 
-            DBInterface.Connection}, library::String, 
-            table::String)::DataFrame
+    function describe_table(conn::Union{LibPQ.Connection, 
+        DBInterface.Connection}, library::String, 
+        table::String
+    )::DataFrame
 
 Get a table's description (row count, columns, column types)
 """
@@ -101,8 +106,10 @@ end
 
 
 """
-function get_table(conn::Union{LibPQ.Connection, 
-            DBInterface.Connection}, library::String, table::String;
+    function get_table(conn::Union{LibPQ.Connection, 
+        DBInterface.Connection}, library::String, table::String;
+        obs::Int = nothing, offset::Int = 0, cols = nothing
+    )::DataFrame
 
 Create a DataFrame from a table
 """
@@ -128,9 +135,10 @@ end
 
 
 """
-function raw_sql(conn::Union{LibPQ.Connection, 
-                DBInterface.Connection},
-                query::String)::DataFrame
+    function raw_sql(conn::Union{LibPQ.Connection, 
+        DBInterface.Connection},
+        query::String
+    )::DataFrame
 Executes raw sql code, and converts code to a DataFrame
 """
 function raw_sql(conn::Union{LibPQ.Connection, DBInterface.Connection},

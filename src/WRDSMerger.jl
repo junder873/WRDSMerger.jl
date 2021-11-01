@@ -27,10 +27,12 @@ export link_identifiers, comp_data,
     crsp_data, crsp_market, crsp_stocknames,
     crsp_adjust, crsp_delist,
     ibes_crsp_link, calculate_car, 
-    range_join, @join, BDay, FFEstMethod,
+    range_join, BDay, FFEstMethod,
     EventWindow, Conditions, ff_data,
     Permno, Cusip, NCusip, GVKey, CIK,
-    Ticker, IbesTicker, LinkTable, link_table
+    Ticker, IbesTicker, LinkTable, link_table,
+    list_libraries, list_tables, describe_table,
+    get_table, raw_sql
 
 ##############################################################################
 ##
