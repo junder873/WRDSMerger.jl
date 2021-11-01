@@ -113,28 +113,28 @@ function run_sql_query(
     return temp
 end
 
-struct Condition
+struct Conditions
     fun::Function
     l::Union{Symbol, String}
     r::Union{Symbol, String}
 end
 
-function Condition(
+function Conditions(
     l::Union{Symbol, String},
     fun::Function,
     r::Union{Symbol, String}
 )
-    Condition(
+    Conditions(
         fun,
         l,
         r
     )
 end
 
-function Condition(
+function Conditions(
     x::Tuple{Function, Symbol, Symbol}
 )
-    Condition(
+    Conditions(
         x[1],
         x[2],
         x[3]
@@ -165,7 +165,7 @@ function range_join(
         df1,
         df2,
         on,
-        Condition.(conditions);
+        Conditions.(conditions);
         minimize,
         join_conditions,
         validate=(validate[2], validate[1]),
@@ -190,7 +190,7 @@ end
 function filter_data(
     df_row::DataFrameRow,
     df_partial::AbstractDataFrame,
-    conditions::Array{Condition};
+    conditions::Array{Conditions};
     join_conditions::Union{Array{Symbol}, Symbol}=:and,
 )
 
@@ -236,8 +236,8 @@ function special_get(gdf, key)
     end
 end
 
-r_col_names(x::Condition) = x.r
-l_col_names(x::Condition) = x.l
+r_col_names(x::Conditions) = x.r
+l_col_names(x::Conditions) = x.l
 
 function validate_error(df)
     if nrow(df) > 0
@@ -263,7 +263,7 @@ end
         df1::DataFrame,
         df2::DataFrame,
         on,
-        conditions::Array{Condition};
+        conditions::Array{Conditions};
         minimize=nothing,
         join_conditions::Union{Array{Symbol}, Symbol}=:and,
         validate::Tuple{Bool, Bool}=(false, false),
@@ -276,7 +276,7 @@ to work with ranges
 - `df1::DataFrame`: left DataFrame
 - `df2::DataFrame`: right DataFrame
 - `on`: either array of column names or matched pairs
-- `conditions::Array{Condition}`: array of `Condition`, which specifies the function (<=, >, etc.), left and right columns
+- `conditions::Array{Conditions}`: array of `Conditions`, which specifies the function (<=, >, etc.), left and right columns
 - `jointype::Symbol=:inner`: type of join, options are :inner, :outer, :left, and :right
 - `minimize`: either `nothing` or an array of column names or matched pairs, minimization will take place in order
 - `join_conditions::Union{Array{Symbol}, Symbol}`: defaults to `:and`, otherwise an array of symbols that is 1 less than the length of conditions that the joins will happen in (:or or :and)
@@ -302,8 +302,8 @@ range_join(
     df2,
     [:firm],
     [
-        (<, :date, :date_high),
-        (>, :date, :date_low)
+        Conditions(<, :date, :date_high),
+        Conditions(>, :date, :date_low)
     ],
     join_conditions=[:and]
 )
@@ -315,28 +315,29 @@ function range_join(
     df1::DataFrame,
     df2::DataFrame,
     on,
-    conditions::Array{Condition};
+    conditions::Array{Conditions};
     minimize=nothing,
     join_conditions::Union{Array{Symbol}, Symbol}=:and,
     validate::Tuple{Bool, Bool}=(false, false),
     jointype::Symbol=:inner,
 )
 
-    if nrow(df1) > nrow(df2) # the fewer main loops this goes through
+    if nrow(df1) > nrow(df2) && minimize === nothing
+        # the fewer main loops this goes through
         # the faster it is overall, if they are about equal
         # this likely slows things down, but it is
         # significantly faster if it is flipped for large sets
-        new_cond = Condition[]
+        # I added minimize === nothing since, under the current setup
+        # the minimization is done as minimize assumes a groupby on
+        # the left, so it does not work properly if this goes through
+        # one thought on how to fix that is to create a minimize object
+        # that would allow for setting the condition under which
+        # minimizaiton makes sense
+        new_cond = Conditions[]
         for con in conditions
-            push!(new_cond, Condition(change_function(con.fun), con.r, con.l))
+            push!(new_cond, Conditions(change_function(con.fun), con.r, con.l))
         end
         on1, on2 = parse_ons(on)
-        if minimize !== nothing
-            min1, min2 = parse_ons(minimize)
-            new_min = min2 .=> min1
-        else
-            new_min=nothing
-        end
         new_join = if jointype == :left
             new_join = :right
         elseif jointype == :right
@@ -349,7 +350,6 @@ function range_join(
             df1,
             on2 .=> on1,
             new_cond;
-            minimize=new_min,
             join_conditions,
             validate=(validate[2], validate[1]),
             jointype=new_join,
@@ -421,18 +421,19 @@ function range_join(
 
     end
     if minimize !== nothing
+        min1, min2 = parse_ons(minimize)
         df_temp = hcat(
-            df1[res_left, string.(on1) |> unique],
-            df2[res_right, string.(on2) |> unique]
+            df1[res_left, string.(min1) |> unique],
+            df2[res_right, string.(min2) |> unique]
         )
         df_temp[!, :_idx_left] = res_left
         df_temp[!, :_idx_right] = res_right
-        for (on1, on2) in zip(on1, on2)
+        for (l, r) in zip(min1, min2)
             #group_col = x.group_col_left ? :_idx_left : :_idx_right
             group_col = :_idx_left
             df_temp = subset(
                 groupby(df_temp, group_col),
-                [on1, on2] =>
+                [l, r] =>
                 (l, r) -> abs.(l .- r) .== minimum(abs.(l .- r))
             )
         end

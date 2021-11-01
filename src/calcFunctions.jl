@@ -155,9 +155,10 @@ function calculate_car(
         crsp,
         [idcol],
         [
-            Condition(<=, date_start, :retDate),
-            Condition(>=, date_end, :retDate)
-        ]
+            Conditions(<=, date_start, :retDate),
+            Conditions(>=, date_end, :retDate)
+        ],
+        jointype=:left
     )
 
     
@@ -458,8 +459,8 @@ function calculate_car(
             df[i, :],
             temp,
             [
-                Condition(<=, est_window_start, "return_date"),
-                Condition(>=, est_window_end, "return_date")
+                Conditions(<=, est_window_start, "return_date"),
+                Conditions(>=, est_window_end, "return_date")
             ]
         )
         df[i, :obs_ff] = sum(fil_ff)
@@ -469,8 +470,8 @@ function calculate_car(
             df[i, :],
             temp,
             [
-                Condition(<=, date_start, "return_date"),
-                Condition(>=, date_end, "return_date")
+                Conditions(<=, date_start, "return_date"),
+                Conditions(>=, date_end, "return_date")
             ]
         )
         temp_event = temp[fil_event, :]

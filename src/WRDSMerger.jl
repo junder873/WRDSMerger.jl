@@ -28,7 +28,7 @@ export link_identifiers, comp_data,
     crsp_adjust, crsp_delist,
     ibes_crsp_link, calculate_car, 
     range_join, @join, BDay, FFEstMethod,
-    EventWindow, Condition, ff_data,
+    EventWindow, Conditions, ff_data,
     Permno, Cusip, NCusip, GVKey, CIK,
     Ticker, IbesTicker, LinkTable, link_table
 

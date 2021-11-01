@@ -350,3 +350,112 @@ df = calculate_car(
 sort!(df, :permno)
 @test isapprox.(round.(df.car_sum, sigdigits=3), df_res.car_ma) |> all
 @test isapprox.(round.(df.bhar, sigdigits=3), df_res.bhar_ma) |> all
+
+##
+
+df1 = DataFrame(
+    id=[1, 1, 2, 2],
+    date_start=[Date(2019), Date(2020), Date(2019), Date(2020)],
+    date_end=[Date(2020), Date(2021), Date(2020, 6, 30), Date(2021)]
+)
+df2 = DataFrame(
+    id=[1, 1, 1, 2, 2, 2],
+    date=[Date(2018), Date(2019, 6, 30), Date(2020), Date(2020, 2), Date(2020, 7), Date(2019, 12, 31)]
+)
+
+temp = range_join(
+    df1,
+    df2,
+    [:id],
+    [
+        WRDSMerger.Conditions("date_start", <=, "date"),
+        WRDSMerger.Conditions("date_end", >, "date")
+    ],
+    jointype=:left
+)
+
+@test all(temp.date_start .<= temp.date .< temp.date_end)
+@test nrow(temp) == 6
+
+temp = range_join(
+    df2,
+    df1,
+    [:id],
+    [
+        WRDSMerger.Conditions("date", >=, "date_start"),
+        WRDSMerger.Conditions("date", <, "date_end")
+    ],
+    jointype=:right
+)
+
+@test all(temp.date_start .<= temp.date .< temp.date_end)
+@test nrow(temp) == 6
+
+temp = range_join(
+    df1,
+    df2,
+    [:id],
+    [
+        WRDSMerger.Conditions("date_start", <=, "date"),
+        WRDSMerger.Conditions("date_end", >, "date")
+    ],
+    jointype=:right
+)
+
+@test nrow(temp) == 7
+
+temp = range_join(
+    df1,
+    df2,
+    [:id],
+    [
+        WRDSMerger.Conditions("date_start", <=, "date"),
+        WRDSMerger.Conditions("date_end", >, "date")
+    ],
+    minimize=[:date_end => :date],
+    validate=(true, false)
+)
+
+@test nrow(temp) == 4
+
+temp = range_join(
+    df2,
+    df1,
+    [:id],
+    [
+        WRDSMerger.Conditions("date", >=, "date_start"),
+        WRDSMerger.Conditions("date", <, "date_end")
+    ],
+    minimize=[:date => :date_end],
+    validate=(true, false)
+)
+
+@test nrow(temp) == 5
+
+temp = range_join(
+    df1,
+    df2,
+    [:id],
+    [
+        WRDSMerger.Conditions("date_start", <=, "date"),
+        WRDSMerger.Conditions("date_end", >, "date")
+    ],
+    jointype=:outer,
+    join_conditions=[:and]
+)
+
+@test nrow(temp) == 7
+
+temp = range_join(
+    df1,
+    df2,
+    [:id],
+    [
+        WRDSMerger.Conditions("date_start", >, "date"),
+        WRDSMerger.Conditions("date_end", <, "date")
+    ],
+    join_conditions=:or
+)
+
+@test all((|).(temp.date .< temp.date_start, temp.date .> temp.date_end))
+@test nrow(temp) == 5

@@ -306,7 +306,8 @@ function link_identifiers(
     cur_ids::Vector{T},
     dates::Vector{Date},
     new_types::Type{<:FirmIdentifier}...;
-    convert_to_values::Bool=true
+    convert_to_values::Bool=true,
+    validate::Bool=true
 ) where {T<:FirmIdentifier}
     df = DataFrame(
         ids=cur_ids,
@@ -331,10 +332,10 @@ function link_identifiers(
             new_table,
             [string(l[1])],
             [
-                Condition("date", >=, table.date_col_min),
-                Condition("date", <=, table.date_col_max)
+                Conditions("date", >=, table.date_col_min),
+                Conditions("date", <=, table.date_col_max)
             ],
-            validate=(true, false),
+            validate=(validate, false),
             jointype=:left
         )
         select!(df, Not([table.date_col_min, table.date_col_max]))
