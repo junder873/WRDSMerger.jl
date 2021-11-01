@@ -48,23 +48,51 @@ WRDSMerger.default_tables["comp_fundq"] = "compa_fundq"
 
 ### Links between WRDS Identifiers
 
-A common task is linking two tables in WRDS. The most common identifiers are Permno (used in CRSP datasets), Cusip (used in a variety of datasets, and its historical version, NCusip), GVKey (Compustat datasets), and IBES Tickers (used in IBES). This package provides the function `link_identifiers` to link between these different identifiers (CIK and normal Tickers as well). To use, you first need a DataFrame with the identifier and a date column, the date column is required since most links are conditional on a specific date. For example, if your IBES Ticker is "ORCL":
+A common task is linking two tables in WRDS. The most common identifiers are Permno (used in CRSP datasets), Cusip (used in a variety of datasets, and its historical version, NCusip), GVKey (Compustat datasets), and IBES Tickers (used in IBES). This package provides the function `link_identifiers` to link between these different identifiers (CIK and normal Tickers as well). It also provides a number of types to make it clear what identifier is being used. Most of these links (the only exception I know of is GVKey and CIK) are only valid for a specific range of dates. Therefore, you would pass the function some a vector of the initial type, vector of dates, and the types that you want to link to.
+
+For example, assume you have a DataFrame with tickers (that are based on IBES tickers), and a series of dates:
 
 ```julia
 df = DataFrame(
-    ibes_ticker=["ORCL"],
-    date=[Date(2020)]
+    ticker=["ORCL", "ETN", "ETN"],
+    date=[Date(2020), Date(2020), Date(2010)]
+)
+```
+You then pass these as vectors to `link_identifiers`:
+
+```julia
+link_identifiers(conn, IbesTicker.(df.ticker), df.date, NCusip, Cusip)
+
+# 3×4 DataFrame
+#  Row │ IbesTicker  date        NCusip    Cusip    
+#      │ String      Date        String    String   
+# ─────┼────────────────────────────────────────────
+#    1 │ ORCL        2020-01-01  68389X10  68389X10
+#    2 │ ETN         2020-01-01  G2918310  G2918310
+#    3 │ ETN         2010-01-01  27805810  G2918310
+```
+
+With this output, it is relatively easy to merge with your original DataFrame. For example:
+
+```julia
+leftjoin(
+    df,
+    link_identifiers(conn, IbesTicker.(df.ticker), df.date, NCusip, Cusip),
+    on=["ticker" => "IbesTicker", "date"],
+    validate=(false, true)
 )
 ```
 
-Note that `ibes_ticker` and `ticker` need to be labeled correctly at the start. While there is functionality for acceptaing different names (through the `ibes_ticker_name` and `ticker_name` keyword arguments), the functionality if finicky at best. My recommendation is to rename the column before passing it to the `link_identifiers` function.
+These types are also easily extandable. The current built-in types are:
+- `Permno`
+- `Cusip`
+- `NCusip`
+- `IbesTicker`
+- `Ticker`
+- `GVKey`
+- `CIK`
 
-Once you have your DataFrame with an identifier and date, then pass that to the `link_identifier` function, setting the new identifiers you want to true:
-
-```julia
-df_temp = link_identifiers(conn, df; permno=true, gvkey=true)
-```
-This will provide the links as of that date. It is then straightforward to merge this new `df_temp` into your existing database.
+If there is another identifier that is not provided, all that is required is to specify a new type, subtyping the abstract type `FirmIdentifier`, a `convert` function that converts the new type to an `Integer` or `String`, and a  `LinkTable` that connects the new identifier to one of the existing identifiers. With those three, the merge function should work automatically.
 
 ### Calculating Abnormal Returns
 

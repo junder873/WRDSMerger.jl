@@ -225,6 +225,11 @@ println(size(df))
 println(df)
 @test nrow(df) > 0
 
+df = link_identifiers(db, IbesTicker.(["ORCL", "ETN", "ETN"]), [Date(2020), Date(2020), Date(2010)], NCusip, Cusip)
+println(size(df))
+println(df)
+@test nrow(df) == 3
+
 
 ##
 
