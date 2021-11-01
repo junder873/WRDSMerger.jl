@@ -7,7 +7,7 @@ mutable struct LinkTable
     date_col_max::Union{Missing, String} # date column in the database, if missing and min
     # is not missing, then date_col_min is assumed to be the minimum date until a new
     # date is specified
-    filters::Dict{String, Any} # filters that will be applied when downloading data
+    filters::Dict{String, <:Any} # filters that will be applied when downloading data
     type_translations::Vector{Pair{String, Type{<:FirmIdentifier}}} # translate the column
     # as downloaded to the correct type
 end
@@ -135,7 +135,11 @@ function link_table(
     fil_type::Vector{T}=FirmIdentifier[]
 ) where {T<:FirmIdentifier}
     if 0 < length(fil_type) <= 1000
-        table.filters = copy(table.filters)
+        temp_filter = Dict{String, Any}()
+        for (key, val) in temp.filters
+            temp_filter[key] = val
+        end
+        table.filters = temp_filter
         col_str_temp = ""
         for (col, t) in table.type_translations
             if t == T
@@ -297,12 +301,12 @@ function link_identifiers(
     ) |> unique
     rename!(df, "ids" => string(T))
 
-    tree = build_tree(T)
+    tree = build_tree(T) # tree starts from provided type and goes to all available types
     list = vcat([
-        build_list(T, tree) for T in new_types
-    ]...) |> unique
-    tables = LinkTable.(list)
-    list, tables = unique_tables(list, tables)
+        build_list(K, tree) for K in new_types
+    ]...) |> unique # pairs of types from new_types to the provided type
+    tables = LinkTable.(list) # get the list of tables, already in order
+    list, tables = unique_tables(list, tables) # make the tables unique, prevents downloading unnecessary data
     for (l, table) in zip(list, tables)
         new_table = link_table(conn, table, collect(skipmissing(df[:, string(l[1])])))
         if nrow(new_table) == 0
