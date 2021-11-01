@@ -54,16 +54,16 @@ include("exploreDB.jl")
 
 
 global default_tables = Dict{String, String}(
-    "comp_funda" => "compa_funda",
-    "comp_fundq" => "compa_fundq",
-    "crsp_stocknames" => "crsp_stocknames",
-    "crsp_index" => "crsp_dsi",
-    "crsp_stock_data" => "crsp_dsf",
-    "crsp_delist" => "crsp_dsedelist",
-    "crsp_a_ccm_ccmxpf_lnkhist" => "crsp_a_ccm_ccmxpf_lnkhist",
-    "wrdsapps_ibcrsphist" => "wrdsapps_ibcrsphist",
-    "comp_company" => "comp_company",
-    "ff_factors" => "ff_factors_daily",
+    "comp_funda" => "compa.funda",
+    "comp_fundq" => "compa.fundq",
+    "crsp_stocknames" => "crsp.stocknames",
+    "crsp_index" => "crsp.dsi",
+    "crsp_stock_data" => "crsp.dsf",
+    "crsp_delist" => "crsp.dsedelist",
+    "crsp_a_ccm_ccmxpf_lnkhist" => "crsp_a_ccm.ccmxpf_lnkhist",
+    "wrdsapps_ibcrsphist" => "wrdsapps.ibcrsphist",
+    "comp_company" => "comp.company",
+    "ff_factors" => "ff.factors_daily",
 )
 
 end 
