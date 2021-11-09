@@ -106,7 +106,7 @@ function build_tree_base(x::FirmIdentifierNode)
         end
 
         try
-            LinkTable(x.data, y)# |> println
+            LinkTable(x.data, y)
             addchild(y, x)
         catch
             continue

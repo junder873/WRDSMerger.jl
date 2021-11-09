@@ -195,6 +195,7 @@ function find_item(T::Type{<:FirmIdentifier}, node::FirmIdentifierNode)
             break
         end
     end
+
     out
 end
 
@@ -209,6 +210,9 @@ end
 
 function build_list(T::Type{<:FirmIdentifier}, tree::FirmIdentifierNode)
     bot_node = find_item(T, tree)
+    if bot_node == 0
+        error("The identifier $T is not in the tree, check that all the links work.")
+    end
     out = parent_list(bot_node) |> reverse
     out2 = Pair{Type{<:FirmIdentifier}, Type{<:FirmIdentifier}}[]
     for i in 1:length(out)-1
@@ -236,6 +240,8 @@ function adjust_date_cols(df::DataFrame, table::LinkTable, date_min::Date, date_
         df[!, table.date_col_min] = coalesce.(df[:, table.date_col_min], date_min)
         df[!, table.date_col_max] = coalesce.(df[:, table.date_col_max], date_max)
     end
+    df[!, table.date_col_min] = Date.(df[:, table.date_col_min])
+    df[!, table.date_col_max] = Date.(df[:, table.date_col_max])
     return df
 end
 
@@ -307,7 +313,8 @@ function link_identifiers(
     dates::Vector{Date},
     new_types::Type{<:FirmIdentifier}...;
     convert_to_values::Bool=true,
-    validate::Bool=true
+    validate::Bool=true,
+    show_tree::Bool=false
 ) where {T<:FirmIdentifier}
     df = DataFrame(
         ids=cur_ids,
@@ -316,6 +323,7 @@ function link_identifiers(
     rename!(df, "ids" => string(T))
 
     tree = build_tree(T) # tree starts from provided type and goes to all available types
+    show_tree && print_tree(tree)
     list = vcat([
         build_list(K, tree) for K in new_types
     ]...) |> unique # pairs of types from new_types to the provided type

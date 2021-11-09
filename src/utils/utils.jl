@@ -23,7 +23,7 @@ end
 
 
 
-buy_hold_return(x) = prod(x .+ 1)
+buy_hold_return(x) = prod(x .+ 1) - 1
 bhar_calc(firm, market) = buy_hold_return(firm) - buy_hold_return(market)
 
 

@@ -199,7 +199,7 @@ println(size(df))
 
 ##
 
-df = link_identifiers(db, [Permno(10104)], [Date(2020)], Cusip, NCusip, GVKey, Ticker, IbesTicker)
+df = link_identifiers(db, [Permno(10104)], [Date(2020)], Cusip, NCusip, GVKey, Ticker, IbesTicker, show_tree=true)
 println(size(df))
 println(df)
 @test nrow(df) > 0

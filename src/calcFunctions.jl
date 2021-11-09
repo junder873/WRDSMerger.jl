@@ -436,6 +436,16 @@ function calculate_car(
     rename!(crsp_raw, "date" => "return_date")
     dropmissing!(crsp_raw, vcat([:ret], ff_est.ff_sym))
     gdf_crsp = groupby(crsp_raw, idcol)
+    idx = gdf_crsp.idx
+
+    condition_est_window = [
+        Conditions(<=, est_window_start, "return_date"),
+        Conditions(>=, est_window_end, "return_date")
+    ]
+    condition_event_window = [
+        Conditions(<=, date_start, "return_date"),
+        Conditions(>=, date_end, "return_date")
+    ]
 
     f = term(:ret) ~ sum(term.(ff_est.ff_sym))
     
@@ -448,42 +458,45 @@ function calculate_car(
     # on bigger datasets, for small sets it is sometimes faster
     # the difference primarily is in garbage collection, with large numbers
     # it alwasy ends up spending a ton of time garbage collecting
-    for i in 1:nrow(df)
-        temp = get(
-            gdf_crsp,
-            Tuple(df[i, idcol]),
-            DataFrame()
-        )
-        nrow(temp) == 0 && continue
-        fil_ff = filter_data(
-            df[i, :],
-            temp,
+    for (i, key) in enumerate(Tuple.(copy.(eachrow(df[:, idcol]))))
+        s, e = special_get(gdf_crsp, key)
+        e == 0 && continue
+
+        fil_ff = broadcast(
+            &,
             [
-                Conditions(<=, est_window_start, "return_date"),
-                Conditions(>=, est_window_end, "return_date")
-            ]
+                broadcast(
+                    condition.fun,
+                    df[i, condition.l],
+                    crsp_raw[idx[s:e], condition.r]
+                )
+                for condition in condition_est_window
+            ]...
         )
         df[i, :obs_ff] = sum(fil_ff)
         sum(fil_ff) < ff_est.min_est && continue
         #temp_ff = temp[temp_ff, :]
-        fil_event = filter_data(
-            df[i, :],
-            temp,
+        fil_event = broadcast(
+            &,
             [
-                Conditions(<=, date_start, "return_date"),
-                Conditions(>=, date_end, "return_date")
-            ]
+                broadcast(
+                    condition.fun,
+                    df[i, condition.l],
+                    crsp_raw[idx[s:e], condition.r]
+                )
+                for condition in condition_event_window
+            ]...
         )
-        temp_event = temp[fil_event, :]
+        temp_idx = idx[s:e][fil_event]
  
-        nrow(temp_event) == 0 && continue
+        length(temp_idx) == 0 && continue
 
-        rr = reg(temp[fil_ff, :], f)
-        expected_ret = predict(rr, temp_event)
-        df[i, :car_ff] = sum(temp_event.ret .- expected_ret)
+        rr = reg(crsp_raw[idx[s:e][fil_ff], :], f)
+        expected_ret = predict(rr, crsp_raw[temp_idx, :])
+        df[i, :car_ff] = sum(crsp_raw[temp_idx, :ret] .- expected_ret)
         df[i, :std_ff] = sqrt(rr.rss / rr.dof_residual) # similar to std(rr.residuals), corrects for the number of parameters
-        df[i, :bhar_ff] = bhar_calc(temp_event.ret, expected_ret)
-        df[i, :obs_event] = nrow(temp_event)
+        df[i, :bhar_ff] = bhar_calc(crsp_raw[temp_idx, :ret], expected_ret)
+        df[i, :obs_event] = length(temp_idx)
 
     end
     return df
