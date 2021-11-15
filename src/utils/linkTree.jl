@@ -104,12 +104,8 @@ function build_tree_base(x::FirmIdentifierNode)
         if isabstracttype(y) || y == x.data || y ∈ existing_types(get_root(x))
             continue
         end
-
-        try
-            LinkTable(x.data, y)
+        if !isempty(methods(LinkTable, (Type{x.data}, Type{y})))
             addchild(y, x)
-        catch
-            continue
         end
     end
     if isdefined(x, :children)

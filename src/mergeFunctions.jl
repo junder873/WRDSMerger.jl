@@ -38,7 +38,7 @@ LinkTable(::Type{Ticker}, ::Type{T}) where {T<:CusipAll} = LinkTable(
     "namedt",
     "nameenddt",
     Dict{String, Any}("ncusip" => missing),
-    ["ticker" => "Ticker", lowercase(string(T)) => T]
+    ["ticker" => Ticker, lowercase(string(T)) => T]
 )
 LinkTable(::Type{T}, ::Type{Ticker}) where {T<:CusipAll} = LinkTable(Ticker, T)
 
@@ -314,7 +314,8 @@ function link_identifiers(
     new_types::Type{<:FirmIdentifier}...;
     convert_to_values::Bool=true,
     validate::Bool=true,
-    show_tree::Bool=false
+    show_tree::Bool=false,
+    colnames::AbstractVector{<:Pair}=Pair{String, String}[]
 ) where {T<:FirmIdentifier}
     df = DataFrame(
         ids=cur_ids,
@@ -355,6 +356,11 @@ function link_identifiers(
             if col != "date"
                 df[!, col] = value.(df[:, col])
             end
+        end
+    end
+    for col in colnames
+        if col[1] ∈ names(df)
+            rename!(df, col)
         end
     end
     df
