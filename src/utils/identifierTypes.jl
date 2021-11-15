@@ -221,7 +221,10 @@ Base.convert(::Type{K}, x::Real) where {K<:FirmIdentifier} = K(x)
 
 # Used for GVKey, CIK, Ticker, and IbesTicker
 Base.convert(::Type{T}, x::K) where {T<:AbstractString,K<:FirmIdentifierString} = convert(T, x.val)
-Base.convert(::Type{T}, x::K) where {T<:Real,K<:FirmIdentifierString} = parse(T, x.val)
+
+# Special case for GVKey and CIK
+Base.convert(::Type{T}, x::GVKey) where {T<:Real} = parse(T, x.val)
+Base.convert(::Type{T}, x::CIK) where {T<:Real} = parse(T, x.val)
 
 # Used for GVKey, CIK, Ticker, IbesTicker, Cusip, and NCusip
 Base.convert(::Type{K}, x::AbstractString) where {K<:FirmIdentifierString} = K(x)
@@ -229,18 +232,26 @@ Base.convert(::Type{K}, x::AbstractString) where {K<:FirmIdentifierString} = K(x
 # Used for Cusip and NCusip
 Base.convert(::Type{T}, x::K) where {T<:AbstractString,K<:CusipAll} = convert(T, "$(x.issuer)$(x.issue)")
 
+# Comparisons
+# These all convert the non-identifier into an identifier before back to the base value
+# This ensures consistency in the comparison, no issues with CIK being an Int in one place and a string in another
+
+# I am not sure these are actually useful, they were made to try and make joins possible but that is handled by hash
+Base.:(==)(id::K, s::T) where {T<:AbstractString, K<:FirmIdentifier} = convert(T, id) == convert(T, convert(K, s))
+Base.:(==)(s::T, id::K) where {T<:AbstractString, K<:FirmIdentifier} = convert(T, convert(K, s)) == convert(T, id)
+
+# isless is valuable for sorting
+Base.isless(id::K, s::T) where {T<:AbstractString, K<:FirmIdentifier} = isless(convert(T, id), convert(T, convert(K, s)))
+Base.isless(s::T, id::K) where {T<:AbstractString, K<:FirmIdentifier} = isless(convert(T, convert(K, s)), convert(T, id))
+Base.isless(id1::FirmIdentifier, id2::FirmIdentifier) = isless(value(id1), value(id2))
+
 # String based identifiers
-
-Base.:(==)(id::FirmIdentifierString, s::T) where {T<:AbstractString} = convert(T, id) == s
-Base.:(==)(s::T, id::FirmIdentifierString) where {T<:AbstractString} = s == convert(T, id)
-
-Base.isless(id::FirmIdentifierString, s::T) where {T <: AbstractString} = isless(convert(T, id), s)
-Base.isless(s::T, id::FirmIdentifierString) where {T <: AbstractString} = isless(s, convert(T, id))
-Base.isless(id1::FirmIdentifierString, id2::FirmIdentifierString) = isless(convert(String, id1), convert(String, id2))
 
 Base.show(io::IOContext, id::FirmIdentifierString) = show(io, convert(String, id))
 # Base.print(io::IOContext, x::GVKey) = print(io, x.val)
 Base.string(id::FirmIdentifierString) = convert(String, id)
+
+# tryparse is useful for csv
 Base.tryparse(::Type{T}, s::AbstractString) where {T<:FirmIdentifierString} = try T(s) catch nothing end
 value(id::FirmIdentifierString) = convert(String, id)
 
@@ -252,13 +263,6 @@ Base.promote_rule(::Type{T}, ::Type{K}) where {T<:FirmIdentifierString,K<:Abstra
 Base.hash(id::FirmIdentifierString) = hash(convert(String, id))
 
 # Integer based identifiers
-
-Base.:(==)(id::FirmIdentifierInt, s::T) where {T<:Real} = convert(T, id) == s
-Base.:(==)(s::T, id::FirmIdentifierInt) where {T<:Real} = s == convert(T, id)
-
-Base.isless(id::FirmIdentifierInt, s::T) where {T <: Real} = isless(convert(T, id), s)
-Base.isless(s::T, id::FirmIdentifierInt) where {T <: Real} = isless(s, convert(T, id))
-Base.isless(id1::FirmIdentifierInt, id2::FirmIdentifierInt) = isless(convert(Int, id1), convert(Int, id2))
 
 Base.show(io::IOContext, id::FirmIdentifierInt) = show(io, convert(Int, id))
 Base.string(id::FirmIdentifierInt) = string(convert(Int, id))
