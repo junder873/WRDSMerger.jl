@@ -127,54 +127,12 @@ println(size(df))
 
 df_pull = DataFrame(
     permno=[10104, 11762],
-    dateStart=[Date(2019), Date(2020)],
+    dateStart=[Date(2019, 1, 7), Date(2020, 1, 6)],
     dateEnd=[Date(2021), Date(2021)]
 )
 df = crsp_data(
     db,
-    df_pull;
-    pull_method=:optimize,
-) |> dropmissing
-println(size(df))
-@test nrow(df) > 100
-
-df = crsp_data(
-    db,
-    df_pull;
-    pull_method=:minimize,
-) |> dropmissing
-println(size(df))
-@test nrow(df) > 100
-
-df = crsp_data(
-    db,
-    df_pull;
-    pull_method=:stockonly,
-) |> dropmissing
-println(size(df))
-@test nrow(df) > 100
-
-df = crsp_data(
-    db,
-    df_pull;
-    pull_method=:alldata,
-) |> dropmissing
-println(size(df))
-@test nrow(df) > 100
-
-df = crsp_data(
-    db,
-    df_pull;
-    pull_method=:minimize,
-    adjust_crsp_data=false
-) |> dropmissing
-println(size(df))
-@test nrow(df) > 100
-
-df = crsp_data(
-    db,
-    df_pull;
-    pull_method=:minimize,
+    df_pull.permno;
     cols=["ret", "askhi", "prc"]
 ) |> dropmissing
 println(size(df))
@@ -182,9 +140,21 @@ println(size(df))
 
 df = crsp_data(
     db,
-    Date(2015),
-    Date(2021)
-)
+    df_pull.permno,
+    df_pull.dateStart;
+    cols=["ret", "askhi", "prc"]
+) |> dropmissing
+println(size(df))
+@test nrow(df) == 2
+
+
+df = crsp_data(
+    db,
+    df_pull.permno,
+    df_pull.dateStart,
+    df_pull.dateEnd;
+    cols=["ret", "askhi", "prc"]
+) |> dropmissing
 println(size(df))
 @test nrow(df) > 100
 

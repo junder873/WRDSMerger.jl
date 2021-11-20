@@ -165,7 +165,9 @@ function sql_query_full(
     dates;
     cols=["permno", "date", "ret"]
 )
-    "(" * join(sql_query_basic.(permnos, dates; cols), ") UNION (") * ")"
+    #"(" * 
+    join(sql_query_basic.(permnos, dates; cols), " UNION ")
+    # * ")"
 end
 
 function merge_date_ranges(x::AbstractArray{<:StepRange})
@@ -234,7 +236,7 @@ function crsp_data(
     date_end::Date=today();
     cols = ["ret", "vol", "shrout"],
     adjust_crsp_data::Bool=true,
-    filters::Dict{String, <:Any} = Dict{String, <:Any}()
+    filters::Dict{String, <:Any} = Dict{String, Any}()
 )
     @assert all(isinteger.(permnos)) "All of the Permnos must be convertable to an Integer"
 
@@ -304,7 +306,7 @@ function crsp_data(
         date=dates
     ) |> unique
 
-    if length(unique(dates)) > nrow(df) / 5
+    if length(unique(dates)) < nrow(df) / 5
         temp_market = crsp_market(dsn, minimum(dates), maximum(dates); cols=["dates"])
         df = innerjoin(
             df,
