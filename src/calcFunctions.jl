@@ -292,7 +292,7 @@ function calculate_car(
     df = copy(df)
 
 
-    crsp = crsp_data(conn, df; date_start, date_end)
+    crsp = crsp_data(conn, df[:, idcol], df[:, date_start], df[:, date_end])
     crspM = crsp_market(
         conn,
         minimum(df[:, date_start]),
@@ -370,10 +370,9 @@ function calculate_car(
             df_temp = vcat(df_temp, df[:, [idcol, date, "dateStart", "dateEnd"]])
         end
     end
-    gdf = groupby(df_temp, [idcol, date])
-    df_temp = combine(gdf, "dateStart" => minimum => "dateStart", "dateEnd" => maximum => "dateEnd")
 
-    crsp = crsp_data(conn, df_temp)
+
+    crsp = crsp_data(conn, df_temp[:, idcol], df_temp[:, "dateStart"], df_temp[:, "dateEnd"])
 
     crspM = crsp_market(
         conn,
@@ -531,7 +530,7 @@ function calculate_car(
     rename!(temp, est_window_start => date_start, est_window_end => date_end)
     temp = vcat(temp, df[:, [idcol, date_start, date_end]]) |> unique
 
-    crsp_raw = crsp_data(conn, temp; date_start, date_end)
+    crsp_raw = crsp_data(conn, temp[:, idcol], temp[:, date_start], temp[:, date_end])
     ff_download = ff_data(
         conn;
         date_start=minimum(temp[:, date_start]),

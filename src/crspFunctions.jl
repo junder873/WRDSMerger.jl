@@ -133,7 +133,7 @@ function crsp_market(
         cols
     end
 
-    col_str = join(cols, ", ")
+    col_str = join(cols |> unique, ", ")
 
     query = """
                         select $col_str
@@ -147,154 +147,252 @@ end
 # or for estimating the amount of time it would take to download a table
 # of a given size.
 
-function main_and_statement(permno, date_start, date_end)
-    "(date BETWEEN '$(date_start)' AND '$(date_end)' AND permno = $(permno))"
+
+date_filter(date_range::StepRange) = "date BETWEEN '$(date_range[1])' AND '$(date_range[end])'"
+date_filter(date_range::AbstractArray{<:StepRange}) = "((" * join(date_filter.(date_range), ") OR (") * "))"
+date_filter(dates::AbstractArray{Date}) = "date IN ('$(join(dates, "','"))')"
+
+function sql_query_basic(
+    permno::Int,
+    dates;
+    cols::Vector{String}=["permno", "date", "ret"]
+)
+    "SELECT $(join(cols, ",")) FROM $(default_tables["crsp_stock_data"]) WHERE permno = $permno AND $(date_filter(dates))"
 end
 
-function partial_sql_statement(
-        permno::Real,
-        date_start::Date,
-        date_end::Date;
-        identifier::String="permno",
-        date_col::String="date"
-    )
-    permno = Int(permno)
-    "($date_col BETWEEN '$(date_start)' AND '$(date_end)' AND $identifier = $(permno))"
+function sql_query_full(
+    permnos,
+    dates;
+    cols=["permno", "date", "ret"]
+)
+    "(" * join(sql_query_basic.(permnos, dates; cols), ") UNION (") * ")"
 end
 
-function partial_sql_statement(
-        permno::String,
-        date_start::Date,
-        date_end::Date;
-        identifier::String="permno",
-        date_col::String="date"
-    )
-    "($date_col BETWEEN '$(date_start)' AND '$(date_end)' AND $identifier IN ($(permno)))"
-end
-
-create_permno_str(permnos::AbstractArray{<:Real}) = join(Int.(unique(permnos)), ",")
-
-function partial_sql_statement(
-        permnos::AbstractArray{<:Real},
-        date_starts::AbstractArray{Date},
-        date_ends::AbstractArray{Date};
-        identifier::String="permno",
-        date_col::String="date"
-    )
-    if length(permnos) == 1
-        return partial_sql_statement(permnos[1], date_starts[1], date_ends[1]; identifier, date_col)
+function merge_date_ranges(x::AbstractArray{<:StepRange})
+    x = sort(x)
+    out = eltype(x)[]
+    s = x[1][1]
+    e = x[1][end]
+    for i in 2:length(x)
+        if e >= x[i][1]
+            e = x[i][end]
+        else
+            push!(out, s:Day(1):e)
+            s = x[i][1]
+            e = x[i][end]
+        end
     end
-    permno_str = create_permno_str(permnos)
-    min_date = minimum(date_starts)
-    max_date = maximum(date_ends)
-    partial_sql_statement(permno_str, min_date, max_date; identifier, date_col)
-end
-function partial_sql_statement(
-        df::AbstractDataFrame;
-        date_start::String="dateStart",
-        date_end::String="dateEnd",
-        identifier::String="permno",
-        date_col::String="date"
-    )
-    if nrow(df) == 1
-        return partial_sql_statement(df[1, :]; date_start, date_end, identifier, date_col)
-    end
-    permnos = join(Int.(unique(df[:, identifier])), ",")
-    min_date = minimum(df[:, date_start])
-    max_date = maximum(df[:, date_end])
-    partial_sql_statement(permnos, min_date, max_date; identifier, date_col)
-end
-
-function partial_sql_statement(
-        df::DataFrameRow;
-        date_start::String="dateStart",
-        date_end::String="dateEnd",
-        identifier::String="permno",
-        date_col::String="date"
-    )
-    "($date_col BETWEEN '$(df[date_start])' AND '$(df[date_end])' AND $identifier = $(df[identifier]))"
-end
-
-function file_size_estimate(
-        df;
-        date_start::String="dateStart",
-        date_end::String="dateEnd",
-        cluster_col::String="cluster",
-        firm_col::String="permno"
-    )
-    temp = combine(
-        groupby(df, cluster_col),
-        date_start => minimum => "min_date",
-        date_end => maximum => "max_date",
-        firm_col => length ∘ unique => "firm_count"
-        )
-    temp[!, :total_days] = bdayscount.(:USNYSE, temp.min_date, temp.max_date) .+ isbday.(:USNYSE, temp.max_date)
-    return sum(temp.firm_count .* temp.total_days)
-end
-function data_time_estimate(
-        obs;
-        intercept=1000,
-        slope=0.0200079
-    )
-    intercept + slope * obs
-end
-function cluster_time_estimate(
-        clusters;
-        intercept=32.3731,
-        slope=0.0236368,
-    )
-    (intercept + clusters * slope) ^ 2
-end
-function total_time_estimate(
-        df;
-        date_start::String="dateStart",
-        date_end::String="dateEnd",
-        cluster_col::String="cluster",
-        firm_col::String="permno"
-    )
-    row_count = file_size_estimate(df; date_start, date_end, cluster_col, firm_col)
-    data_time = data_time_estimate(row_count)
-    cluster_time = cluster_time_estimate(length(unique(df[:, cluster_col])))
-    return data_time + cluster_time
+    push!(out, s:Day(1):e)
+    out
 end
 
 
 """
     function crsp_data(
         conn::Union{LibPQ.Connection, DBInterface.Connection},
-        df::DataFrame;
+        [permnos::Vector{<:Real},]
+        s::Date=Date(1925),
+        e::Date=today();
         cols = ["ret", "vol", "shrout"],
-        pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
-        date_start::String="dateStart",
-        date_end::String="dateEnd",
+        filters::Dict{String, <:Any}=Dict{String, Any}(),
         adjust_crsp_data::Bool=true
     )
 
-Downloads data from the crsp stockfiles, which are individual stocks. The data is downloaded
-for each stock in the provided DataFrame, subject to the different methods of optimizing
-the downloaded data.
+    function crsp_data(
+        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        permnos::Vector{<:Real},
+        dates::Vector{Date},
+        [dates_end::Vector{Date}];
+        cols=["ret", "vol", "shrout"],
+        adjust_crsp_data::Bool=true,
+        query_size_limit::Int=3000
+    )
+
+
+Downloads data from the crsp stockfiles, which are individual stocks. To download the data from
+the monthly stockfile, change the default table to the monthly stockfile:
+```julia
+WRDSMerger.default_tables["crsp_stock_data"] = "crsp.msf"
+WRDSMerger.default_tables["crsp_index"] = "crsp.msi"
+WRDSMerger.default_tables["crsp_delist"] = "crsp.msedelist"
+```
 
 # Arguments
-- df::DataFrame: The primary DataFrame, which must include a "permno" column and a
-    start and end date columns (specified under `date_start` and `date_end` keyword arguments)
-- `pull_method::Symbol=:optimize`: designates the method the function will pull the data,
-        to help minimize the amount of data needed. The available methods are:
-    - `:optimize`: uses a clustering algorithm (kmeans) to find common or nearby dates
-        which then is used to pull data for that group of stocks around that date. Since
-        finding the appropriate number of clusters takes time, it does so in steps of 500
-        and estimates the time to download that much data and for WRDS to process the request
-        (more data = longer time, more chunks = longer time)
-    - `:minimize`: pulls data for each stock individually, resulting in only necessary
-        data being downloaded. However, due to WRDS taking exponentially more time for
-        each `OR` statement, this can get very slow with large datasets, ideal for
-        small datasets with disperse data
-    - `:stockonly`: retrieves all data between the minimum and maximum date in the dataset
-        for all firms that are listed, ideal if the minimim and maximum date needed are close
-        to each other
-    - `:alldata`: retrieves all data between the minimum and maximum date
+
+- `permnos::Vecotr{<:Real}`: A vector of firm IDs, if provided, will only download data for those firms
+- `s::Date=Date(1925)` and `e::Date=today()`: Downloads all data between two dates provided
+- `dates::Vector{Date}`: Downloads data for a set of permnos on the date provided
+    - `dates_end::Vector{Date}`: If provided, then treats the `dates` as the start of a period
+      and will download data for the permnos between the two dates
 - `adjust_crsp_data::Bool=true`: This will call `crsp_adjust` with all options
     set to true, it will only do the operations that it has the data for.
 """
+function crsp_data(
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    permnos::Vector{<:Real},
+    date_start::Date=Date(1926),
+    date_end::Date=today();
+    cols = ["ret", "vol", "shrout"],
+    adjust_crsp_data::Bool=true,
+    filters::Dict{String, <:Any} = Dict{String, <:Any}()
+)
+    @assert all(isinteger.(permnos)) "All of the Permnos must be convertable to an Integer"
+
+    filters["permno"] = Int.(permnos)
+    return crsp_data(
+        conn,
+        date_start,
+        date_end;
+        cols,
+        filters,
+        adjust_crsp_data
+    )
+end
+
+function crsp_data(
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    s::Date=Date(1925),
+    e::Date=today();
+    cols = ["ret", "vol", "shrout"],
+    filters::Dict{String, <:Any}=Dict{String, Any}(),
+    adjust_crsp_data::Bool=true
+)
+    for col in ["permno", "date"]
+        if col ∉ cols
+            push!(cols, col)
+        end
+    end
+    colString = join(cols, ", ")
+
+    filter_str = create_filter(filters, "WHERE date BETWEEN '$s' AND '$e'")
+
+    query = """
+        select $colString
+        from $(default_tables["crsp_stock_data"])
+        $filter_str
+    """
+    crsp = run_sql_query(conn, query) |> DataFrame
+    if adjust_crsp_data
+        crsp = crsp_adjust(conn, crsp)
+    end
+    return crsp
+end
+
+
+function crsp_data(
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    permnos::Vector{<:Real},
+    dates::Vector{Date};
+    cols=["ret", "vol", "shrout"],
+    adjust_crsp_data::Bool=true,
+    query_size_limit::Int=3000
+)
+
+    @assert all(isinteger.(permnos))  "All of the Permnos must be convertable to an Integer"
+    @assert length(permnos) == length(dates) "Must have same number of dates as Permnos"
+
+    for col in ["permno", "date"]
+        if col ∉ cols
+            push!(cols, col)
+        end
+    end
+
+    permnos = Int.(permnos)
+
+    df = DataFrame(
+        permno=permnos,
+        date=dates
+    ) |> unique
+
+    if length(unique(dates)) > nrow(df) / 5
+        temp_market = crsp_market(dsn, minimum(dates), maximum(dates); cols=["dates"])
+        df = innerjoin(
+            df,
+            temp_market,
+            on=:date,
+            validate=(false, true)
+        )
+    end
+
+    df = combine(
+        groupby(df, :permno),
+        :date => (x -> [Vector(x)])
+    )
+    rename!(df, [:permno, :date])
+    
+    queries = sql_query_full.(
+        collect(Iterators.partition(df.permno, query_size_limit)),
+        collect(Iterators.partition(df.date, query_size_limit));
+        cols
+    )
+    crsp = DataFrame()
+    for q in queries
+        temp = run_sql_query(conn, q)
+        if nrow(crsp) == 0
+            crsp = temp[:, :]
+        else
+            crsp = vcat(crsp, temp)
+        end
+    end
+
+    if adjust_crsp_data
+        crsp = crsp_adjust(conn, crsp)
+    end
+    return crsp
+end
+
+function crsp_data(
+    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    permnos::Vector{<:Real},
+    dates_min::Vector{Date},
+    dates_max::Vector{Date};
+    cols=["ret", "vol", "shrout"],
+    adjust_crsp_data::Bool=true,
+    query_size_limit::Int=3000
+)
+    @assert all(isinteger.(permnos))  "All of the Permnos must be convertable to an Integer"
+    @assert length(permnos) == length(dates_min) == length(dates_max) "Must have same number of dates as Permnos"
+
+
+    for col in ["permno", "date"]
+        if col ∉ cols
+            push!(cols, col)
+        end
+    end
+
+    permnos = Int.(permnos)
+
+    df = DataFrame(
+        permno=permnos
+    )
+    df[!, :date_range] = [d1:Day(1):d2 for (d1, d2) in zip(dates_min, dates_max)]
+    df = combine(
+        groupby(df, :permno),
+        "date_range" => x -> [merge_date_ranges(x)]
+    )
+    rename!(df, [:permno, :date_range])
+
+    queries = sql_query_full.(
+        collect(Iterators.partition(df.permno, query_size_limit)),
+        collect(Iterators.partition(df.date_range, query_size_limit));
+        cols
+    )
+    crsp = DataFrame()
+    for q in queries
+        temp = run_sql_query(conn, q)
+        if nrow(crsp) == 0
+            crsp = temp[:, :]
+        else
+            crsp = vcat(crsp, temp)
+        end
+    end
+
+    if adjust_crsp_data
+        crsp = crsp_adjust(conn, crsp)
+    end
+    return crsp
+end
+
 function crsp_data(
     conn::Union{LibPQ.Connection, DBInterface.Connection},
     df::DataFrame;
@@ -321,104 +419,36 @@ function crsp_data(
         end
     end
 
-    colString = join(cols, ", ")
-    
-    query = "SELECT $colString FROM $(default_tables["crsp_stock_data"]) WHERE "
-
-    if pull_method == :optimize
-        df[!, :date_val] = Float64.(Dates.value.(df[:, date_start]))
-        cluster_max = length(unique(df[:, date_start]))
-        t_ests = Float64[]
-        for clusters in 1:500:cluster_max+500
-            c = min(clusters, cluster_max)
-            t1 = now()
-            x = ParallelKMeans.kmeans(Hamerly(), Matrix(df[:, [:date_val]])', c)
-            if clusters > 1
-                old_clusters = df.cluster
-            end
-            df[!, :cluster] = x.assignments
-            t2 = now()
-            t_est = total_time_estimate(df; date_start, date_end, cluster_col="cluster", firm_col="permno")
-            if length(t_ests) > 0 && t_ests[end] - t_est < Dates.value(t2 - t1)
-                if t_ests[end] < t_est
-                    df[!, :cluster] = old_clusters
-                end
-                break
-            else
-                push!(t_ests, t_est)
-            end
-        end
-            
-        gdf = groupby(df, :cluster)
-
-        temp = combine(
-            gdf,
-            :permno => create_permno_str => :permno_str,
-            date_start => minimum => :date_min,
-            date_end => maximum => :date_max
+    if pull_method == :optimize || pull_method == :minimize
+        return crsp_data(
+            conn,
+            df.permno,
+            df[:, date_start],
+            df[:, date_end];
+            cols,
+            adjust_crsp_data
         )
-
-        temp[!, :s] = partial_sql_statement.(temp.permno_str, temp.date_min, temp.date_max)
-        query *= join(temp.s, " OR ")
-    
     elseif pull_method == :stockonly
-        permnos = join(Int.(unique(df[:, :permno])), ",")
-        query *= "date between '$(minimum(df[:, date_start]))' and '$(maximum(df[:, date_end]))' and permno IN ($permnos)"
-        
-    elseif pull_method == :alldata
-        query *= "date between '$(minimum(df[:, date_start]))' and '$(maximum(df[:, date_end]))'"
+        return crsp_data(
+            conn,
+            df.permno |> unique,
+            minimum(df[:, date_start]),
+            maximum(df[:, date_end]);
+            cols,
+            adjust_crsp_data
+        )
     else
-        query *= join(main_and_statement.(df.permno, df[:, date_start], df[:, date_end]), " OR ")
+        return crsp_data(
+            conn,
+            minimum(df[:, date_start]),
+            maximum(df[:, date_end]);
+            cols,
+            adjust_crsp_data
+        )
     end
-
-    crsp = run_sql_query(conn, query) |> DataFrame
-    if adjust_crsp_data
-        crsp = crsp_adjust(conn, crsp)
-    end
-    return crsp
 end
 
-"""
-    function crsp_data(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
-        s::Date=Date(1925),
-        e::Date=today();
-        cols = ["ret", "vol", "shrout"],
-        adjust_crsp_data::Bool=true
-    )
 
-Downloads all crsp stock data between the start and end date.
-
-## Arguments
-- `adjust_crsp_data::Bool=true`: This will call `crsp_adjust` with all options
-    set to true, it will only do the operations that it has the data for.
-"""
-function crsp_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    s::Date=Date(1925),
-    e::Date=today();
-    cols = ["ret", "vol", "shrout"],
-    adjust_crsp_data::Bool=true
-)
-    for col in ["permno", "date"]
-        if col ∉ cols
-            push!(cols, col)
-        end
-    end
-    colString = join(cols, ", ")
-
-
-    query = """
-        select $colString
-        from $(default_tables["crsp_stock_data"])
-        where date between '$(s)' and '$(e)'
-    """
-    crsp = run_sql_query(conn, query) |> DataFrame
-    if adjust_crsp_data
-        crsp = crsp_adjust(conn, crsp)
-    end
-    return crsp
-end
 
 
 """
