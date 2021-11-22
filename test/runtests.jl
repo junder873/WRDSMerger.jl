@@ -125,10 +125,20 @@ df = crsp_market(db; cols="ewretd") |> dropmissing
 println(size(df))
 @test nrow(df) > 0
 
+x = WRDSMerger.merge_date_ranges(
+    [
+        Date(2019):Day(1):Date(2020),
+        Date(2020):Day(1):Date(2021),
+        Date(2018):Day(1):Date(2018, 6),
+        Date(2018, 5):Day(1):Date(2018, 6),
+        ]
+    )
+@test x == [Date(2018):Day(1):Date(2018, 6), Date(2019):Day(1):Date(2021)]
+
 df_pull = DataFrame(
-    permno=[10104, 11762],
-    dateStart=[Date(2019, 1, 7), Date(2020, 1, 6)],
-    dateEnd=[Date(2021), Date(2021)]
+    permno=[10104, 11762, 10104],
+    dateStart=[Date(2019, 1, 7), Date(2020, 1, 6), Date(2020, 12, 1)],
+    dateEnd=[Date(2021), Date(2021), Date(2021, 2, 3)]
 )
 df = crsp_data(
     db,
@@ -145,7 +155,7 @@ df = crsp_data(
     cols=["ret", "askhi", "prc"]
 ) |> dropmissing
 println(size(df))
-@test nrow(df) == 2
+@test nrow(df) == 3
 
 
 df = crsp_data(
