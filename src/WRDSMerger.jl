@@ -12,7 +12,6 @@ using Statistics
 using FixedEffectModels
 using LibPQ
 using DBInterface
-using ParallelKMeans
 using AbstractTrees
 using ShiftedArrays: lead
 using InteractiveUtils
