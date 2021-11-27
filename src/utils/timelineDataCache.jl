@@ -328,8 +328,8 @@ end
         id::Int,
         d1::Date,
         d2::Date,
-        col_firm::String,
-        cols_market::Union{Nothing, Vector{String}, String}=nothing;
+        cols_market::Union{Nothing, Vector{String}, String}=nothing,
+        col_firm::String;
         warn_dates::Bool=false
     )
 
@@ -363,8 +363,8 @@ function get_firm_market_data(
         @assert all([c in MARKET_DATA_CACHE.cols for c in cols_market]) "Not all columns are in the data"
         pos = [col_pos(c, MARKET_DATA_CACHE.cols) for c in cols_market]
     else
-        @assert col_market ∈ MARKET_DATA_CACHE.cols "$col_market is not in the MARKET_DATA_CACHE"
-        pos = col_pos(col_market, MARKET_DATA_CACHE.cols)
+        @assert col_markets ∈ MARKET_DATA_CACHE.cols "$col_markets is not in the MARKET_DATA_CACHE"
+        pos = col_pos(col_markets, MARKET_DATA_CACHE.cols)
     end
     (
         firm_data.data[col_firm][data_range(firm_data, d1, d2)],
