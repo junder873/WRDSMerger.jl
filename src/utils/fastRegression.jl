@@ -124,7 +124,7 @@ function cache_reg(
     cache_reg(id, est_min, est_max, cols_market, col_firm; warn_dates, minobs, calendar)
 end
 
-StatsBase.predict(mod::BasicReg, x) = x * mod.coef
+StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
 StatsBase.coef(x::BasicReg) = x.coef
 StatsBase.coefnames(x::BasicReg) = x.coefnames
@@ -138,11 +138,14 @@ StatsBase.deviance(x::BasicReg) = x.tss
 StatsBase.rss(x::BasicReg) = x.rss
 
 """
-    predict(rr::BasicReg, date_start::Date, date_end::Date; warn_dates::Bool=true)
+    predict(rr::RegressionModel, date_start::Date, date_end::Date; warn_dates::Bool=true)
 
-Uses a provided BasicReg model and the cached saved market data to predict returns
-between the two dates provided
+Uses a provided RegressionModel model and the cached saved market data to predict returns
+between the two dates provided.
+
+This will work with any RegressionModel provided as long as it provides methods for `coefnames`
+that correspond to names stored in the MARKET_DATA_CACHE and a `coef` method. The model should be linear.
 """
-function StatsBase.predict(rr::BasicReg, date_start::Date, date_end::Date; warn_dates::Bool=true)
-    predict(rr, get_market_data(date_start, date_end, coefnames(rr)...; warn_dates))
+function StatsBase.predict(rr::RegressionModel, date_start::Date, date_end::Date; warn_dates::Bool=true)
+    get_market_data(date_start, date_end, coefnames(rr)...; warn_dates) * coef(rr)
 end
