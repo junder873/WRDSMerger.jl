@@ -1,4 +1,4 @@
-struct BasicReg
+struct BasicReg <: RegressionModel
     coef::Vector{Float64}
     coefnames::Vector{String}
     yname::String

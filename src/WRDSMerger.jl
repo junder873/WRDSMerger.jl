@@ -47,7 +47,7 @@ export range_join, BDay, Conditions
 export var, std
 
 # From StatsBase
-export coef, coefnnames, responsename, nobs, dof_residual,
+export coef, coefnames, responsename, nobs, dof_residual,
     r2, adjr2, islinear, deviance, rss, predict
 
 ##############################################################################
