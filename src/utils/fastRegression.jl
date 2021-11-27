@@ -50,9 +50,9 @@ end
     cache_reg(
         id::Int,
         est_min::Date,
-        est_max::Date,
+        est_max::Date;
         cols_market::Union{Nothing, Vector{String}}=nothing,
-        col_firm::String="ret";
+        col_firm::String="ret",
         warn_dates::Bool=false,
         minobs::Real=.8,
         calendar="USNYSE"
@@ -87,9 +87,9 @@ of dates. Designed to quickly estimate Fama French predicted returns.
 function cache_reg(
     id::Int,
     est_min::Date,
-    est_max::Date,
+    est_max::Date;
     cols_market::Union{Nothing, Vector{String}}=nothing,
-    col_firm::String="ret";
+    col_firm::String="ret",
     warn_dates::Bool=false,
     minobs::Real=.8,
     calendar="USNYSE"
@@ -109,19 +109,6 @@ function cache_reg(
         col_firm;
         minobs
     )
-end
-
-function cache_reg(
-    id::Int,
-    est_min::Date,
-    est_max::Date;
-    cols_market::Union{Nothing, Vector{String}}=nothing,
-    col_firm::String="ret",
-    warn_dates::Bool=false,
-    minobs::Real=.8,
-    calendar="USNYSE"
-)
-    cache_reg(id, est_min, est_max, cols_market, col_firm; warn_dates, minobs, calendar)
 end
 
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)

@@ -218,7 +218,7 @@ FirmData(crsp_data(db))
 
 ##
 
-rr = cache_reg(18428, Date(2019, 4), Date(2019, 10), ["intercept", "mktrf", "hml"])
+rr = cache_reg(18428, Date(2019, 4), Date(2019, 10); cols_market=["intercept", "mktrf", "hml"])
 @test coefnames(rr) == ["intercept", "mktrf", "hml"]
 @test responsename(rr) == "ret"
 @test nobs(rr) == 126

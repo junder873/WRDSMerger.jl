@@ -329,17 +329,18 @@ end
         d1::Date,
         d2::Date,
         col_firm::String,
-        cols_market::Union{Nothing, Vector{String}}=nothing;
+        cols_market::Union{Nothing, Vector{String}, String}=nothing;
         warn_dates::Bool=false
     )
 
-Returns a Tuple of a vector of firm data and a matrix of market data (matrix has same number of rows as vector length).
+Returns a Tuple of a vector of firm data and a matrix (or vector if only a String is passed for
+cols_market) of market data (matrix has same number of rows as vector length).
 """
 function get_firm_market_data(
     id::Int,
     d1::Date,
     d2::Date,
-    cols_market::Union{Nothing, Vector{String}}=nothing,
+    cols_market::Union{Nothing, Vector{String}, String}=nothing,
     col_firm::String="ret";
     warn_dates::Bool=false
 )
@@ -358,40 +359,13 @@ function get_firm_market_data(
 
     if cols_market === nothing
         pos = 1:length(MARKET_DATA_CACHE.cols)
-    else
+    elseif typeof(cols_market) <: Vector
         @assert all([c in MARKET_DATA_CACHE.cols for c in cols_market]) "Not all columns are in the data"
         pos = [col_pos(c, MARKET_DATA_CACHE.cols) for c in cols_market]
+    else
+        @assert col_market ∈ MARKET_DATA_CACHE.cols "$col_market is not in the MARKET_DATA_CACHE"
+        pos = col_pos(col_market, MARKET_DATA_CACHE.cols)
     end
-    (
-        firm_data.data[col_firm][data_range(firm_data, d1, d2)],
-        MARKET_DATA_CACHE.data[data_range(firm_data, MARKET_DATA_CACHE, d1, d2), pos]
-    )
-end
-
-function get_firm_market_data(
-    id::Int,
-    d1::Date,
-    d2::Date,
-    col_market::String="vwretd",
-    col_firm::String="ret";
-    warn_dates::Bool=false
-)
-    if !haskey(FIRM_DATA_CACHE, id)
-        return missing
-    end
-    firm_data = FIRM_DATA_CACHE[id]
-    if warn_dates
-        d1 < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
-        d2 > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
-        d1 < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
-        d2 > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
-    end
-    d1 = max(d1, firm_data.date_start, MARKET_DATA_CACHE.date_start)
-    d2 = min(d2, firm_data.date_end, MARKET_DATA_CACHE.date_end)
-
-    @assert col_market ∈ MARKET_DATA_CACHE.cols "$col_market is not in the MARKET_DATA_CACHE"
-    pos = col_pos(col_market, MARKET_DATA_CACHE.cols)
-
     (
         firm_data.data[col_firm][data_range(firm_data, d1, d2)],
         MARKET_DATA_CACHE.data[data_range(firm_data, MARKET_DATA_CACHE, d1, d2), pos]
