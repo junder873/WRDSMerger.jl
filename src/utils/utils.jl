@@ -20,10 +20,3 @@ function create_filter(
     end
     return fil
 end
-
-
-
-buy_hold_return(x) = prod(x .+ 1) - 1
-bhar_calc(firm, market) = buy_hold_return(firm) - buy_hold_return(market)
-
-

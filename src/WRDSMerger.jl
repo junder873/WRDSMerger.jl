@@ -9,12 +9,14 @@ using DataFrames
 using Dates
 using BusinessDays
 using Statistics
-using FixedEffectModels
 using LibPQ
 using DBInterface
 using AbstractTrees
 using ShiftedArrays: lead
 using InteractiveUtils
+using StatsBase
+using Statistics
+using LinearAlgebra
 
 ##############################################################################
 ##
@@ -22,16 +24,31 @@ using InteractiveUtils
 ##
 ##############################################################################
 
-export link_identifiers, comp_data,
-    crsp_data, crsp_market, crsp_stocknames,
-    crsp_adjust, crsp_delist,
-    ibes_crsp_link, calculate_car, 
-    range_join, BDay, FFEstMethod,
-    EventWindow, Conditions, ff_data,
-    Permno, Cusip, NCusip, GVKey, CIK,
-    Ticker, IbesTicker, LinkTable, link_table,
-    list_libraries, list_tables, describe_table,
-    get_table, raw_sql
+# identifiers and linking items
+export link_identifiers, Permno, Cusip, NCusip,
+    GVKey, CIK, Ticker, IbesTicker, LinkTable,
+    link_table
+
+# downloads and WRDS exploration functions
+export comp_data, crsp_data, crsp_market, crsp_stocknames,
+    crsp_adjust, crsp_delist, list_libraries, list_tables,
+    describe_table, get_table, raw_sql, ff_data
+    
+# types and functions for fast CAR calculations
+export TimelineData, FirmData, car, alpha, beta,
+    MarketData, get_firm_data, get_market_data,
+    get_firm_market_data, BasicReg, cache_reg,
+    bh_return, bhar
+
+# extra utilities
+export range_join, BDay, Conditions
+
+# From Statistics
+export var, std
+
+# From StatsBase
+export coef, coefnames, responsename, nobs, dof_residual,
+    r2, adjr2, islinear, deviance, rss, predict
 
 ##############################################################################
 ##
@@ -44,13 +61,15 @@ include(joinpath("utils", "dateFunctions.jl"))
 include(joinpath("utils", "identifierTypes.jl"))
 include(joinpath("utils", "linkTree.jl"))
 include(joinpath("utils", "utils.jl"))
+include(joinpath("utils", "timelineDataCache.jl"))
+include(joinpath("utils", "fastRegression.jl"))
 
 include("crspFunctions.jl")
 include("calcFunctions.jl")
 include("compFunctions.jl")
 include("mergeFunctions.jl")
 include("exploreDB.jl")
-
+include("ffData.jl")
 
 global default_tables = Dict{String, String}(
     "comp_funda" => "compa.funda",

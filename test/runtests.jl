@@ -213,124 +213,108 @@ println(df)
 
 ##
 
-temp = DataFrame(
-    permno=[10104, 71563, 79637, 89002, 90993],
-    date=[Date(2020, 12, 1), Date(2020, 12, 20), Date(2020, 7, 3), Date(2020, 9, 30), Date(2020, 10, 15)]
-)
-
-df = calculate_car(db, temp, EventWindow(BDay(-3, :USNYSE), BDay(3, :USNYSE)))
-println(size(df))
-@test nrow(df) > 0
-
-
-df = calculate_car(db, temp, EventWindow(BDay(-3, :USNYSE), Month(1)))
-println(size(df))
-@test nrow(df) > 0
-
-
-df = calculate_car(db, temp, (BDay(-3, :USNYSE), Day(3)))
-println(size(df))
-@test nrow(df) > 0
-
-
-df = calculate_car(
-    db,
-    temp,
-    [EventWindow(BDay(-3, :USNYSE), BDay(3, :USNYSE)), EventWindow(BDay(-3, :USNYSE), Month(1))]
-)
-println(size(df))
-@test nrow(df) > 0
-
-crsp_firms = crsp_data(db)
-crsp_market_data = crsp_market(db)
-
-df = calculate_car(
-    (crsp_firms, crsp_market_data),
-    temp,
-    [EventWindow(BDay(-3, :USNYSE), BDay(3, :USNYSE)), EventWindow(BDay(-3, :USNYSE), Month(1))]
-)
-println(size(df))
-@test nrow(df) > 0
-
-df = calculate_car(
-    (crsp_firms, crsp_market_data),
-    temp,
-    (Month(-1), Day(3))
-)
-println(size(df))
-@test nrow(df) > 0
+MarketData(ff_data(db))
+FirmData(crsp_data(db))
 
 ##
 
-ff = FFEstMethod(event_window=EventWindow(BDay(-3, :USNYSE), BDay(3, :USNYSE)))
-ff2 = FFEstMethod(event_window=EventWindow(Day(-5), BDay(3, :USNYSE)))
-
-df = calculate_car(db, temp, ff)
-println(size(df))
-@test nrow(df) > 0
-
-ff_market_data = WRDSMerger.ff_data(db)
-
-df = calculate_car((crsp_firms, ff_market_data), temp, [ff, ff2])
-println(size(df))
-@test nrow(df) > 0
+rr = cache_reg(18428, Date(2019, 4), Date(2019, 10); cols_market=["intercept", "mktrf", "hml"])
+@test coefnames(rr) == ["intercept", "mktrf", "hml"]
+@test responsename(rr) == "ret"
+@test nobs(rr) == 126
+@test all(isapprox.(coef(rr), [-.00125105, 1.40602071, 1.19924984]; atol=.00001))
+@test isapprox(r2(rr), .42340085667)
+@test isapprox(adjr2(rr), .41402526)
+@test dof_residual(rr) == 123
+@test islinear(rr)
+@test alpha(rr) == rr.coef[1]
+@test beta(rr) == rr.coef[2]
 
 ##
 
-temp = DataFrame(
-    permno=[82515, 14763, 15291, 51369, 61516, 76185, 87445],
-    date=[Date(2020, 10, 7), Date(2020, 9, 21), Date(2020, 9, 21), Date(2020, 9, 21), Date(2020, 6, 22), Date(2020, 6, 22), Date(2020, 6, 22)]
+temp = innerjoin(
+    ff_data(db),
+    crsp_market(db),
+    on=:date
 )
+temp[!, :mkt] = temp.mktrf .+ temp.rf
+MarketData(temp, force_update=true)
+##
 
-sort!(temp, :permno)
 df_res = CSV.File(joinpath("data", "car_results.csv")) |> DataFrame
-sort!(df_res, :permno)
+
+##
 
 # the SAS code that I tested this against appears to round results to 3 significant digits
 
-ff = FFEstMethod(event_window=EventWindow(BDay(-10, :USNYSE), BDay(10, :USNYSE)))
-df = calculate_car(db, temp, ff)
-sort!(df, :permno)
-@test isapprox.(round.(df.car_ff, sigdigits=3), df_res.car_ff) |> all
-@test isapprox.(round.(df.bhar_ff, sigdigits=3), df_res.bhar_ff) |> all
-@test isapprox.(df.std_ff .^ 2, df_res.estimation_period_variance_ff_model_, rtol=.000001) |> all
+# Since these are over specific periods, I specify those as functions to make this easier
+event_start(x) = x + BDay(0, :USNYSE) - BDay(10, :USNYSE)
+event_end(x) = (x + BDay(0, :USNYSE)) + BDay(10, :USNYSE)
+est_end(x) = event_start(x) - BDay(16, :USNYSE)
+est_start(x) = est_end(x) - BDay(149, :USNYSE)
 
+rr_market = cache_reg.(
+        df_res.permno,
+        est_start.(df_res.event_date),
+        est_end.(df_res.event_date);
+        cols_market=["intercept", "mktrf"]
+    )
 
-ff = FFEstMethod(event_window=EventWindow(BDay(-10, :USNYSE), BDay(10, :USNYSE)), ff_sym=[:mktrf, :smb, :hml, :umd])
-df = calculate_car(db, temp, ff)
-sort!(df, :permno)
-@test isapprox.(round.(df.car_ff, sigdigits=3), df_res.car_ffm) |> all
-@test isapprox.(round.(df.bhar_ff, sigdigits=3), df_res.bhar_ffm) |> all
-@test isapprox.(df.std_ff .^ 2, df_res.estimation_period_variance_carhart_model_, rtol=.000001) |> all
+@test isapprox(round.(alpha.(rr_market), digits=5), df_res.alpha_market_model_)
+@test isapprox(round.(beta.(rr_market), digits=3), df_res.beta_market_model)
+cars = car.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_market)
+@test isapprox(round.(cars, sigdigits=3), df_res.car_mm)
+bhars = bhar.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_market)
+@test isapprox(round.(bhars, sigdigits=3), df_res.bhar_mm)
+stds = std.(rr_market)
+vars = var.(rr_market)
+@test isapprox(round.(vars, digits=10), df_res.estimation_period_variance_market_model_)
 
+##
 
-ff = FFEstMethod(event_window=EventWindow(BDay(-10, :USNYSE), BDay(10, :USNYSE)), ff_sym=[:mktrf])
-df = calculate_car(db, temp, ff)
-sort!(df, :permno)
+returns = bh_return.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date))
+@test isapprox(round.(returns, sigdigits=3), df_res.cumulative_total_return)
+cars = car.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date); cols_market="mkt")
+@test isapprox(round.(cars, sigdigits=3), df_res.car_ma)
+bhars = bhar.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date); cols_market="mkt")
+@test isapprox(round.(bhars, sigdigits=3), df_res.bhar_ma)
+stds = std.(df_res.permno, est_start.(df_res.event_date), est_end.(df_res.event_date); cols_market="mkt")
+vars = var.(df_res.permno, est_start.(df_res.event_date), est_end.(df_res.event_date); cols_market="mkt")
+@test isapprox(round.(vars, digits=10), df_res.estimation_period_variance_market_adjusted_returns_)
 
-@test isapprox.(round.(df.car_ff, sigdigits=3), df_res.car_mm) |> all
-@test isapprox.(round.(df.bhar_ff, sigdigits=3), df_res.bhar_mm) |> all
-@test isapprox.(df.std_ff .^ 2, df_res.estimation_period_variance_market_model_, rtol=.000001) |> all
+##
 
+rr_ff = cache_reg.(
+        df_res.permno,
+        est_start.(df_res.event_date),
+        est_end.(df_res.event_date),
+        cols_market=["intercept", "mktrf", "smb", "hml"]
+    )
 
-# there are subtle differences between crsp vwretd and the returns listed in fama french
-# to be able to accurately test this, I use the fama french data, but the results are very similar
+cars = car.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_ff)
+@test isapprox(round.(cars, sigdigits=3), df_res.car_ff)
+bhars = bhar.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_ff)
+@test isapprox(round.(bhars, sigdigits=3), df_res.bhar_ff)
+stds = std.(rr_ff)
+vars = var.(rr_ff)
+@test isapprox(round.(vars, digits=10), df_res.estimation_period_variance_ff_model_)
 
-df_crsp_firms = crsp_data(db)
-df_crsp_market = ff_data(db)
-df_crsp_market[!, :mkt] = df_crsp_market.mktrf .+ df_crsp_market.rf
+##
 
+rr_ffm = cache_reg.(
+        df_res.permno,
+        est_start.(df_res.event_date),
+        est_end.(df_res.event_date),
+        cols_market=["intercept", "mktrf", "smb", "hml", "umd"]
+    )
 
-df = calculate_car(
-    (df_crsp_firms, df_crsp_market),
-    temp,
-    EventWindow(BDay(-10, :USNYSE), BDay(10, :USNYSE)),
-    market_return="mkt"
-)
-sort!(df, :permno)
-@test isapprox.(round.(df.car_sum, sigdigits=3), df_res.car_ma) |> all
-@test isapprox.(round.(df.bhar, sigdigits=3), df_res.bhar_ma) |> all
-
+cars = car.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_ffm)
+@test isapprox(round.(cars, sigdigits=3), df_res.car_ffm)
+bhars = bhar.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_ffm)
+@test isapprox(round.(bhars, sigdigits=3), df_res.bhar_ffm)
+stds = std.(rr_ffm)
+vars = var.(rr_ffm)
+@test isapprox(round.(vars, digits=10), df_res.estimation_period_variance_carhart_model_)
 ##
 
 df1 = DataFrame(

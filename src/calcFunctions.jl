@@ -1,586 +1,169 @@
+
+Statistics.var(rr::RegressionModel) = rss(rr) / dof_residual(rr)
+Statistics.std(rr::RegressionModel) = sqrt(var(rr))
+
+function Statistics.var(
+    id::Int,
+    date_start::Date,
+    date_end::Date;
+    cols_market::String="vwretd",
+    col_firm::String="ret",
+    warn_dates=false
+)
+    var((-).(get_firm_market_data(id, date_start, date_end; cols_market, col_firm, warn_dates)...))
+end
+
+function Statistics.std(
+    id::Int,
+    date_start::Date,
+    date_end::Date;
+    cols_market::String="vwretd",
+    col_firm::String="ret",
+    warn_dates=false
+)
+    sqrt(var(id, date_start, date_end; cols_market, col_firm, warn_dates))
+end
+
+Statistics.var(rr::Missing) = missing
+Statistics.std(rr::Missing) = missing
+
+bh_return(x) = prod(1 .+ x) - 1
+bhar(x, y) = bh_return(x) - bh_return(y)
+
+# for firm data
 """
-    function calculate_car(
-        data::Tuple{AbstractDataFrame, AbstractDataFrame},
-        df::AbstractDataFrame;
-    )
+    bh_return(id::Int, date_start::Date, date_end::Date, col_firm::String="ret"; warn_dates::Bool=false)
+    bh_return(date_start::Date, date_end::Date, cols_market::String="vwretd"; warn_dates::Bool=true)
 
-    function calculate_car(
-        data::Tuple{AbstractDataFrame, AbstractDataFrame},
-        df::AbstractDataFrame,
-        ret_period::Tuple{<:DatePeriod, <:DatePeriod};
-    )
+Calculates the buy and hold returns (also called geometric return) for TimelineData. If an Integer
+is passed, then it is calculated based on the FIRM_DATA_CACHE (for the integer provided), otherwise
+is calculated for the MARKET_DATA_CACHE.
 
-    function calculate_car(
-        data::Tuple{AbstractDataFrame, AbstractDataFrame},
-        df::AbstractDataFrame,
-        ret_period::EventWindow;
-    )
+These functions treat missing returns in the period implicitly as a zero return.
+"""
+function bh_return(id::Int, date_start::Date, date_end::Date, col_firm::String="ret"; warn_dates::Bool=false)
+    if !haskey(FIRM_DATA_CACHE, id)
+        return missing
+    end
+    bh_return(get_firm_data(id, date_start, date_end, col_firm; warn_dates))
+end
 
-    function calculate_car(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
-        df::AbstractDataFrame,
-        ret_period::Tuple{<:DatePeriod, <:DatePeriod};
-    )
+# for market data
+function bh_return(date_start::Date, date_end::Date, cols_market::String="vwretd"; warn_dates::Bool=true)
+    bh_return(get_market_data(date_start, date_end, cols_market; warn_dates))
+end
 
-    function calculate_car(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
-        df::AbstractDataFrame,
-        ret_period::EventWindow;
-    )
-
-    function calculate_car(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
-        df::AbstractDataFrame;
-    )
-
-    function calculate_car(
-        data::Tuple{AbstractDataFrame, AbstractDataFrame},
-        df::AbstractDataFrame,
-        ret_periods::Vector{EventWindow};
-    )
-
-    function calculate_car(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
-        df::AbstractDataFrame,
-        ret_periods::Vector{EventWindow};
-    )
-
-    function calculate_car(
-        data::Tuple{DataFrame, DataFrame},
-        df::DataFrame,
-        ff_est::FFEstMethod;
-    )
-
-    function calculate_car(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
-        df::AbstractDataFrame,
-        ff_est::FFEstMethod;
-    )
-
-    function calculate_car(
-        data::Tuple{DataFrame, DataFrame},
-        df::AbstractDataFrame,
-        ff_ests::Vector{FFEstMethod};
-    )
-
-Calculates abnormal returns over a period, currently the Fama French and
-other methods are very different, with different options.
-
-# Arguments
-
-## Main Arguments
-
-- data: Provides the data source, one of the following:
-    - `conn::Union{LibPQ.Connection, DBInterface.Connection}`: A connection to a database
-    - `data::Tuple{DataFrame, DataFrame}`: A pair of DataFrames, the first is the stockfiles
-      for each individual stock, the second is for the market data
-- `df::AbstractDataFrame`: The second argument is a DataFrame, with an `idcol` and either a
-  `date` or `date_start` and `date_end` (customizable by kwargs).
-    - If `date` is passed, then there needs to be a `ret_periods` needs to also
-      be passed, which adjusts the `date` to `date_start` and `date_end`
-    - If no `ret_period` or `ff_est` is passed, then `date_start` and `date_end` must
-      be in the DataFrame. These are then used as the range over which abnormal returns
-      are summed
-- `ret_period`: Either an `EventWindow` or `FFEstMethod` type (or a vector of those types)
-  which specifies the primary event window and the estimation method for a Fama French abnormal
-  return
-
-## Keyword Arguments
-
-- Event Date or Window: 
-    - `date::String="date"`: The event date, only in functions where `ret_period` exists
-    - `date_start::String="dateStart"` and `date_end::String="dateEnd"` specify the event
-      period start and end dates, provides flexibility when the period might not be fixed
-- `idcol::String="permno"`: The primary identifying column, only change if downloading
-  data not from WRDS
-
-
-## Keyword Arguments for Non-Fama French Methods
-
-- `market_return::String="vwretd"`: The market return that a simple abnormal return is calculated
-  against
-
-```julia
-out_cols=[
-    ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-    ["car", "ret"] .=> std,
-    ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-    ["ret"] .=> buy_hold_return .=> ["bh_return"]
-]
-```
-This flexible calculation is used in a `combine` function to calculate various statistics
-over the event window.
-
-## Keyword Arguments for Fama french Methods
-
-The following (along with `date_start`, `date_end`, and an FFEstMethod) are passed to the
-function `make_ff_est_windows!` in order to properly format the DataFrame for use:
-- est_window_start::String="est_window_start"
-- est_window_end::String="est_window_end"
-- suppress_warning::Bool=false
 
 """
-function calculate_car(
-    data::Tuple{AbstractDataFrame, AbstractDataFrame},
-    df::AbstractDataFrame;
-    date_start::String="dateStart",
-    date_end::String="dateEnd",
-    idcol::String="permno",
-    market_return::String="vwretd",
-    out_cols=[
-        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car", "ret"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-        ["ret"] .=> buy_hold_return .=> ["bh_return"]
-    ]
+    bhar(id::Int, date_start::Date, date_end::Date, cols_market::String="vwretd", col_firm::String="ret"; warn_dates::Bool=false)
+    bhar(id::Int, date_start::Date, date_end::Date, rr::Union{Missing, RegressionModel}; warn_dates::Bool=false)
+
+Calculates the difference between buy and hold returns relative to the market. If a RegressionModel type is passed, then
+the expected return is estimated based on the regression (Fama French abnormal returns). Otherwise, the value is
+based off of the value provided (typically a market wide return).
+
+These functions treat missing returns in the period implicitly as a zero return.
+"""
+function bhar(
+    id::Int,
+    date_start::Date,
+    date_end::Date;
+    cols_market::String="vwretd",
+    col_firm::String="ret",
+    warn_dates::Bool=false
 )
-    df = copy(df)
-    BusinessDays.initcache(:USNYSE)
-    df[!, :businessDays] = bdayscount(:USNYSE, df[:, date_start], df[:, date_end]) .+ 1
-
-    aggCols = names(df)
-
-    crsp = data[1]
-    crspM = data[2]
-
-    crsp = leftjoin(crsp, crspM, on=:date)
-    crsp[!, :car] = crsp[:, :ret] .- crsp[:, market_return]
-    # crsp[!, :plus1] = crsp[:, :ret] .+ 1
-    # crsp[!, :plus1m] = crsp[:, market_return] .+ 1
-    rename!(crsp, :date => :retDate)
-    rename!(crsp, market_return => "retm")
-
-    df = range_join(
-        df,
-        crsp,
-        [idcol],
-        [
-            Conditions(<=, date_start, :retDate),
-            Conditions(>=, date_end, :retDate)
-        ],
-        jointype=:left
-    )
-
-    
-    gd = groupby(df, aggCols)
-    df = combine(gd, out_cols...)
-
-    return df
-end
-
-function calculate_car(
-    data::Tuple{AbstractDataFrame, AbstractDataFrame},
-    df::AbstractDataFrame,
-    ret_period::Tuple{<:DatePeriod, <:DatePeriod};
-    date::String="date",
-    idcol::String="permno",
-    market_return::String="vwretd",
-    out_cols=[
-        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car", "ret"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-        ["ret"] .=> buy_hold_return .=> ["bh_return"]
-    ]
-)
-    calculate_car(
-        data,
-        df,
-        EventWindow(ret_period);
-        date,
-        idcol,
-        out_cols,
-        market_return
-    )
-end
-
-function calculate_car(
-    data::Tuple{AbstractDataFrame, AbstractDataFrame},
-    df::AbstractDataFrame,
-    ret_period::EventWindow;
-    date::String="date",
-    idcol::String="permno",
-    market_return::String="vwretd",
-    out_cols=[
-        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car", "ret"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-        ["ret"] .=> buy_hold_return .=> ["bh_return"]
-    ]
-)
-    df = copy(df)
-    if date ∉ names(df)
-        throw(ArgumentError("The $date column is not found in the dataframe"))
+    if !haskey(FIRM_DATA_CACHE, id)
+        return missing
     end
-    if idcol ∉ names(df)
-        throw(ArgumentError("The $idcol column is not found in the dataframe"))
+    bh_return(id, date_start, date_end, col_firm; warn_dates) - bh_return(date_start, date_end, cols_market; warn_dates)
+end
+
+function bhar(
+    id::Int,
+    date_start::Date,
+    date_end::Date,
+    rr::Union{Missing, RegressionModel};
+    warn_dates::Bool=false
+)
+    ismissing(rr) && return missing
+    if !haskey(FIRM_DATA_CACHE, id)
+        return missing
     end
-    df[!, :dateStart] = df[:, date] .+ ret_period.s
-    df[!, :dateEnd] = df[:, date] .+ ret_period.e
-
-    return calculate_car(data, df; idcol, out_cols, market_return)
+    bh_return(id, date_start, date_end, responsename(rr); warn_dates) - bh_return(predict(rr, date_start, date_end; warn_dates))
 end
 
-function calculate_car(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    df::AbstractDataFrame,
-    ret_period::Tuple{<:DatePeriod, <:DatePeriod};
-    date::String="date",
-    idcol::String="permno",
-    market_return::String="vwretd",
-    out_cols=[
-        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car", "ret"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-        ["ret"] .=> buy_hold_return .=> ["bh_return"]
-    ]
+"""
+    car(id::Int, date_start::Date, date_end::Date, cols_market::String="vwretd", col_firm::String="ret"; warn_dates::Bool=false)
+    car(id::Int, date_start::Date, date_end::Date, rr::Union{Missing, RegressionModel}; warn_dates::Bool=false)
+
+Calculates the difference between cumulative returns relative to the market. If a RegressionModel type is passed, then
+the expected return is estimated based on the regression (Fama French abnormal returns). Otherwise, the value is
+based off of the value provided (typically a market wide return).
+
+Cumulative returns are the simple sum of returns, they are often used due to their ease to calculate but
+undervalue extreme returns compared to buy and hold returns (bh_return or bhar).
+
+These functions treat missing returns in the period implicitly as a zero return.
+"""
+function car(
+    id::Int,
+    date_start::Date,
+    date_end::Date;
+    cols_market::String="vwretd",
+    col_firm::String="ret",
+    warn_dates::Bool=false
 )
-    calculate_car(
-        conn,
-        df,
-        EventWindow(ret_period);
-        date,
-        idcol,
-        market_return,
-        out_cols
-    )
+    if !haskey(FIRM_DATA_CACHE, id)
+        return missing
+    end
+    sum(get_firm_data(id, date_start, date_end, col_firm; warn_dates)) - sum(get_market_data(date_start, date_end, cols_market; warn_dates))
 end
 
-function calculate_car(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    df::AbstractDataFrame,
-    ret_period::EventWindow;
-    date::String="date",
-    idcol::String="permno",
-    market_return::String="vwretd",
-    out_cols=[
-        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car", "ret"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-        ["ret"] .=> buy_hold_return .=> ["bh_return"]
-    ]
+function car(
+    id::Int,
+    date_start::Date,
+    date_end::Date,
+    rr::Union{Missing, RegressionModel};
+    warn_dates::Bool=false
 )
-    df = copy(df)
-    
-    df[!, :dateStart] = df[:, date] .+ ret_period.s
-    df[!, :dateEnd] = df[:, date] .+ ret_period.e
-
-    return calculate_car(
-        conn,
-        df;
-        date_start="dateStart",
-        date_end="dateEnd",
-        idcol,
-        market_return,
-        out_cols
-    )
-end
-
-function calculate_car(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    df::AbstractDataFrame;
-    date_start::String="dateStart",
-    date_end::String="dateEnd",
-    idcol::String="permno",
-    market_return::String="vwretd",
-    out_cols=[
-        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car", "ret"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-        ["ret"] .=> buy_hold_return .=> ["bh_return"]
-    ]
-)
-    df = copy(df)
-
-
-    crsp = crsp_data(conn, df[:, idcol], df[:, date_start], df[:, date_end])
-    crspM = crsp_market(
-        conn,
-        minimum(df[:, date_start]),
-        maximum(df[:, date_end]);
-        cols=market_return
-    )
-    return calculate_car(
-        (crsp, crspM),
-        df;
-        date_start,
-        date_end,
-        idcol,
-        market_return,
-        out_cols
-    )
+    ismissing(rr) && return missing
+    if !haskey(FIRM_DATA_CACHE, id)
+        return missing
+    end
+    sum(get_firm_data(id, date_start, date_end, responsename(rr); warn_dates)) - sum(predict(rr, date_start, date_end; warn_dates))
 end
 
 
-
-function calculate_car(
-    data::Tuple{AbstractDataFrame, AbstractDataFrame},
-    df::AbstractDataFrame,
-    ret_periods::Vector{EventWindow};
-    date::String="date",
-    idcol::String="permno",
-    market_return::String="vwretd",
-    out_cols=[
-        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car", "ret"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-        ["ret"] .=> buy_hold_return .=> ["bh_return"]
-    ]
-)
-
-
-    df = copy(df)
-
-    dfAll = DataFrame()
-
-    for ret_period in ret_periods
-        df[!, :name] .= repeat([ret_period], nrow(df))
-        if size(dfAll, 1) == 0
-            dfAll = calculate_car(data, df, ret_period; date, idcol, market_return, out_cols)
-        else
-            dfAll = vcat(dfAll, calculate_car(data, df, ret_period; date, idcol, market_return, out_cols))
+function get_coefficient_val(rr::RegressionModel, coefname::String...)
+    for x in coefname
+        if x ∈ coefnames(rr)
+            return coef(rr)[col_pos(x, coefnames(rr))]
         end
     end
-    return dfAll
+    @error("None of $(coefname) is in the RegressionModel model.")
 end
+"""
+    alpha(rr::RegressionModel, coefname::String...="intercept")
 
-function calculate_car(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    df::AbstractDataFrame,
-    ret_periods::Vector{EventWindow};
-    date::String="date",
-    idcol::String="permno",
-    market_return::String="vwretd",
-    out_cols=[
-        ["ret", "vol", "shrout", "retm", "car"] .=> sum,
-        ["car", "ret"] .=> std,
-        ["ret", "retm"] => ((ret, retm) -> bhar=bhar_calc(ret, retm)) => "bhar",
-        ["ret"] .=> buy_hold_return .=> ["bh_return"]
-    ]
-)
-    
-    df = copy(df)
-    df_temp = DataFrame()
+"alpha" in respect to the the CAPM model, i.e., the intercept in the model.
+This is the alpha from the estimation period.
 
-    for ret_period in ret_periods
-        df[!, :dateStart] = df[:, date] .+ ret_period.s
-        df[!, :dateEnd] = df[:, date] .+ ret_period.e
-        if nrow(df_temp) == 0
-            df_temp = df[:, [idcol, date, "dateStart", "dateEnd"]]
-        else
-            df_temp = vcat(df_temp, df[:, [idcol, date, "dateStart", "dateEnd"]])
-        end
-    end
+This function finds the position of the coefficient name provided, defaults to "intercept".
+If the coefname is not in the regression, then this function returns an error.
+"""
+alpha(rr::RegressionModel, coefname::String...="intercept") = get_coefficient_val(rr, coefname...)
 
 
-    crsp = crsp_data(conn, df_temp[:, idcol], df_temp[:, "dateStart"], df_temp[:, "dateEnd"])
+"""
+    beta(rr::RegressionModel, coefname::String...=["mkt", "mktrf", "vwretd", "ewretd"])
 
-    crspM = crsp_market(
-        conn,
-        minimum(df_temp[:, :dateStart]),
-        maximum(df_temp[:, :dateEnd]);
-        cols=market_return,
-    )
+"beta" in respect to the CAPM model, i.e., the coefficient on the market return minus the risk free rate.
+This is the beta from the estimation period.
 
-    return calculate_car(
-        (crsp, crspM),
-        df,
-        ret_periods;
-        date,
-        idcol,
-        market_return,
-        out_cols
-    )
+This function finds the position of the coefficient name provided, defaults to several common market returns.
+If the coefname is not in the regression, then this function returns an error.
+"""
+beta(rr::RegressionModel, coefname::String...=["mkt", "mktrf", "vwretd", "ewretd"]...) = get_coefficient_val(rr, coefname...)
 
-end
-
-function calculate_car(
-    data::Tuple{DataFrame, DataFrame},
-    df::DataFrame,
-    ff_est::FFEstMethod;
-    date_start::String="dateStart",
-    date_end::String="dateEnd",
-    date::String="date",
-    est_window_start::String="est_window_start",
-    est_window_end::String="est_window_end",
-    idcol::String="permno",
-    suppress_warning::Bool=false
-)
-    crsp_raw = data[1]
-    mkt_data = data[2]
-    df = copy(df)
-    make_ff_est_windows!(df,
-        ff_est;
-        date_start,
-        date_end,
-        est_window_start,
-        est_window_end,
-        suppress_warning,
-        date
-    )
-    crsp_raw = leftjoin(
-        crsp_raw,
-        mkt_data,
-        on=:date,
-        validate=(false, true)
-    )
-
-    # My understanding is the original Fama French subtracted risk free
-    # rate, but it does not appear WRDS does this, so I follow that
-    # event_windows[!, :ret_rf] = event_windows.ret .- event_windows[:, :rf]
-    # ff_est_windows[!, :ret_rf] = ff_est_windows.ret .- ff_est_windows[:, :rf]
-
-    # I need to dropmissing here since not doing so creates huge problems
-    # in the prediction component, where it thinks all of the data
-    # is actually categorical in nature
-    rename!(crsp_raw, "date" => "return_date")
-    dropmissing!(crsp_raw, vcat([:ret], ff_est.ff_sym))
-    gdf_crsp = groupby(crsp_raw, idcol)
-    idx = gdf_crsp.idx
-
-    condition_est_window = [
-        Conditions(<=, est_window_start, "return_date"),
-        Conditions(>=, est_window_end, "return_date")
-    ]
-    condition_event_window = [
-        Conditions(<=, date_start, "return_date"),
-        Conditions(>=, date_end, "return_date")
-    ]
-
-    f = term(:ret) ~ sum(term.(ff_est.ff_sym))
-    
-    df[!, :car_ff] = Vector{Union{Missing, Float64}}(missing, nrow(df))
-    df[!, :bhar_ff] = Vector{Union{Missing, Float64}}(missing, nrow(df))
-    df[!, :std_ff] = Vector{Union{Missing, Float64}}(missing, nrow(df))
-    df[!, :obs_event] = Vector{Union{Missing, Int}}(missing, nrow(df))
-    df[!, :obs_ff] = Vector{Union{Missing, Int}}(missing, nrow(df))
-    # for some reason, threading here drastically slows things down
-    # on bigger datasets, for small sets it is sometimes faster
-    # the difference primarily is in garbage collection, with large numbers
-    # it alwasy ends up spending a ton of time garbage collecting
-    for (i, key) in enumerate(Tuple.(copy.(eachrow(df[:, idcol]))))
-        s, e = special_get(gdf_crsp, key)
-        e == 0 && continue
-
-        fil_ff = broadcast(
-            &,
-            [
-                broadcast(
-                    condition.fun,
-                    df[i, condition.l],
-                    crsp_raw[idx[s:e], condition.r]
-                )
-                for condition in condition_est_window
-            ]...
-        )
-        df[i, :obs_ff] = sum(fil_ff)
-        sum(fil_ff) < ff_est.min_est && continue
-        #temp_ff = temp[temp_ff, :]
-        fil_event = broadcast(
-            &,
-            [
-                broadcast(
-                    condition.fun,
-                    df[i, condition.l],
-                    crsp_raw[idx[s:e], condition.r]
-                )
-                for condition in condition_event_window
-            ]...
-        )
-        temp_idx = idx[s:e][fil_event]
- 
-        length(temp_idx) == 0 && continue
-
-        rr = reg(crsp_raw[idx[s:e][fil_ff], :], f)
-        expected_ret = predict(rr, crsp_raw[temp_idx, :])
-        df[i, :car_ff] = sum(crsp_raw[temp_idx, :ret] .- expected_ret)
-        df[i, :std_ff] = sqrt(rr.rss / rr.dof_residual) # similar to std(rr.residuals), corrects for the number of parameters
-        df[i, :bhar_ff] = bhar_calc(crsp_raw[temp_idx, :ret], expected_ret)
-        df[i, :obs_event] = length(temp_idx)
-
-    end
-    return df
-
-end
-
-function calculate_car(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
-    df::AbstractDataFrame,
-    ff_est::FFEstMethod;
-    date_start::String="dateStart",
-    date_end::String="dateEnd",
-    date::String="date",
-    est_window_start::String="est_window_start",
-    est_window_end::String="est_window_end",
-    idcol::String="permno",
-    suppress_warning::Bool=false
-)
-    df = copy(df)
-
-    make_ff_est_windows!(df,
-        ff_est;
-        date_start,
-        date_end,
-        est_window_start,
-        est_window_end,
-        suppress_warning,
-        date
-    )
-    
-    temp = df[:, [idcol, est_window_start, est_window_end]]
-    rename!(temp, est_window_start => date_start, est_window_end => date_end)
-    temp = vcat(temp, df[:, [idcol, date_start, date_end]]) |> unique
-
-    crsp_raw = crsp_data(conn, temp[:, idcol], temp[:, date_start], temp[:, date_end])
-    ff_download = ff_data(
-        conn;
-        date_start=minimum(temp[:, date_start]),
-        date_end=maximum(temp[:, date_end])
-    )
-    return calculate_car(
-        (crsp_raw, ff_download),
-        df,
-        ff_est;
-        date_start,
-        date_end,
-        idcol,
-        suppress_warning=true
-    )
-
-end
-
-function calculate_car(
-    data::Tuple{DataFrame, DataFrame},
-    df::AbstractDataFrame,
-    ff_ests::Vector{FFEstMethod};
-    date_start::String="dateStart",
-    date_end::String="dateEnd",
-    date::String="date",
-    est_window_start::String="est_window_start",
-    est_window_end::String="est_window_end",
-    idcol::String="permno",
-    suppress_warning::Bool=false
-)
-    df = copy(df)
-    out = DataFrame()
-    for ff_est in ff_ests
-        temp = calculate_car(
-            data,
-            df,
-            ff_est;
-            date_start,
-            date_end,
-            est_window_start,
-            est_window_end,
-            idcol,
-            date,
-            suppress_warning
-        )
-        temp[!, :ff_method] .= repeat([ff_est], nrow(temp))
-        if nrow(out) == 0
-            out = temp[:, :]
-        else
-            out = vcat(out, temp)
-        end
-    end
-    return out
-end
+alpha(rr::Missing, coefname::String...="intercept") = missing
+beta(rr::Missing, coefname::String...="error") = missing
