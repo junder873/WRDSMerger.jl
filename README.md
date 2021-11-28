@@ -110,7 +110,7 @@ Another common task is calculating abnormal returns around a firm event, such as
 
 #### Caching Firm and Market Data
 
-To make the calculations as fast as possible, this package relies on cached data to quickly access the return data. This package provides functions to save the data in data types similar to BusinessDays.jl's cached data, which makes accessing a range of data incredibly quick. Using GroupDataFrame and filtering, it took 10+ minutes to run a large number (100,000) of regressions. Using this cached data, the same regressions took less than 3 seconds.
+To make the calculations as fast as possible, this package relies on cached data to quickly access the return data. This package provides functions to save the data in data types similar to [BusinessDays.jl's](https://github.com/JuliaFinance/BusinessDays.jl) cached data, which makes accessing a range of data incredibly quick. Using GroupDataFrame and filtering, it took 10+ minutes to run a large number (100,000) of regressions. Using this cached data, the same regressions took less than 3 seconds.
 
 It is recommended to load market return data first so that the return dates for the firm data can be checked as valid dates. To load the market data into the cache, run:
 ```julia
