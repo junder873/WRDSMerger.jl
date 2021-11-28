@@ -120,8 +120,8 @@ end
 """
     FirmData(
         df::DataFrame;
-        date_col="date",
-        id_col="permno",
+        date_col::String="date",
+        id_col::String="permno",
         valuecols=nothing
     )
 
@@ -131,15 +131,18 @@ as vectors in a second Dictionary.
 """
 function FirmData(
     df::DataFrame;
-    date_col="date",
-    id_col="permno",
+    date_col::String="date",
+    id_col::String="permno",
     valuecols=nothing
 )
     if valuecols === nothing
         valuecols = [n for n in names(df) if n ∉ [date_col, id_col]]
+    elseif !(typeof(valuecols) <: Vector)
+        valuecols = [valuecols]
     end
-    df = select(df, vcat([id_col, date_col], valuecols))
+    df = select(df, vcat([id_col, date_col], string.(valuecols)))
     dropmissing!(df)
+    df[!, id_col] = Int.(df[:, id_col])
     sort!(df)
     gdf = groupby(df, id_col)
     for (i, g) in enumerate(gdf)
@@ -156,10 +159,10 @@ end
 """
     MarketData(
         df::DataFrame;
-        date_col="date",
+        date_col::String="date",
         valuecols=nothing,
-        add_intercept=true,
-        force_update=false
+        add_intercept::Bool=true,
+        force_update::Bool=false
     )
 
 Creates the cached data for the market. Does some initial cleaning and creates a timeline
@@ -167,10 +170,10 @@ of the existing data.
 """
 function MarketData(
     df::DataFrame;
-    date_col="date",
+    date_col::String="date",
     valuecols=nothing,
-    add_intercept=true,
-    force_update=false
+    add_intercept::Bool=true,
+    force_update::Bool=false
 )
     if (
         !isdefined(MARKET_DATA_CACHE, :data) ||
@@ -184,8 +187,10 @@ function MarketData(
         
         if valuecols === nothing
             valuecols = [n for n in names(df) if n ≠ date_col]
+        elseif !(typeof(valuecols) <: Vector)
+            valuecols = [valuecols]
         end
-        df = dropmissing(df, vcat([date_col], valuecols))
+        df = dropmissing(df, vcat([date_col], string.(valuecols)))
         sort!(df, [date_col])
         if add_intercept
             df[!, :intercept] = ones(Int, nrow(df))
@@ -250,43 +255,43 @@ end
 
 
 """
-    get_firm_data(id::Int, d1::Date, d2::Date, col::String; warn_dates::Bool=false)
+    get_firm_data(id::Real, date_start::Date, date_end::Date, col::String="ret"; warn_dates::Bool=false)
 
 Fetches a vector from the FIRM_DATA_CACHE for a specific firm over a date range.
 """
-function get_firm_data(id::Int, d1::Date, d2::Date, col::String; warn_dates::Bool=false)
+function get_firm_data(id::Real, date_start::Date, date_end::Date, col::String="ret"; warn_dates::Bool=false)
     if !haskey(FIRM_DATA_CACHE, id)
         return missing
     end
     firm_data = FIRM_DATA_CACHE[id]
     if warn_dates
-        d1 < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
-        d2 > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
+        date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
+        date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
     end
-    d1 = max(d1, firm_data.date_start)
-    d2 = min(d2, firm_data.date_end)
+    date_start = max(date_start, firm_data.date_start)
+    date_end = min(date_end, firm_data.date_end)
 
-    firm_data.data[col][data_range(firm_data, d1, d2)]
+    firm_data.data[col][data_range(firm_data, date_start, date_end)]
 end
 
 col_pos(x::String, cols::Vector{String}) = findfirst(isequal(x), cols)
 
 # only market data
 """
-    get_market_data(d1::Date, d2::Date, cols_market::String...; warn_dates::Bool=false)
+    get_market_data(date_start::Date, date_end::Date, cols_market::String...; warn_dates::Bool=false)
 
-    get_market_data(id::Int, d1::Date, d2::Date, cols_market::Union{Nothing, Vector{String}}=nothing; warn_dates::Bool=false)
+    get_market_data(id::Real, date_start::Date, date_end::Date, cols_market::Union{Nothing, Vector{String}}=nothing; warn_dates::Bool=false)
 
 Fetches a Matrix of market data between two dates, if an id (Integer) is provided, then the rows of the matrix will be the same
 length as the length of the vector for the firm betwee those two dates.
 """
-function get_market_data(d1::Date, d2::Date, cols_market::String...; warn_dates::Bool=false)
+function get_market_data(date_start::Date, date_end::Date, cols_market::String...; warn_dates::Bool=false)
     if warn_dates
-        d1 < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
-        d2 > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
+        date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
+        date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
     end
-    d1 = max(d1, MARKET_DATA_CACHE.date_start)
-    d2 = min(d2, MARKET_DATA_CACHE.date_end)
+    date_start = max(date_start, MARKET_DATA_CACHE.date_start)
+    date_end = min(date_end, MARKET_DATA_CACHE.date_end)
 
     if length(cols_market) == 0
         pos = 1:length(MARKET_DATA_CACHE.cols)
@@ -294,24 +299,24 @@ function get_market_data(d1::Date, d2::Date, cols_market::String...; warn_dates:
         @assert all([c in MARKET_DATA_CACHE.cols for c in cols_market]) "Not all columns are in the data"
         pos = [col_pos(c, MARKET_DATA_CACHE.cols) for c in cols_market]
     end
-    MARKET_DATA_CACHE.data[data_range(MARKET_DATA_CACHE, d1, d2), pos]
+    MARKET_DATA_CACHE.data[data_range(MARKET_DATA_CACHE, date_start, date_end), pos]
 end
 
 # market data with same length as a firm data
 
-function get_market_data(id::Int, d1::Date, d2::Date, cols_market::String...; warn_dates::Bool=false)
+function get_market_data(id::Real, date_start::Date, date_end::Date, cols_market::String...; warn_dates::Bool=false)
     if !haskey(FIRM_DATA_CACHE, id)
         return missing
     end
     firm_data = FIRM_DATA_CACHE[id]
     if warn_dates
-        d1 < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
-        d2 > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
-        d1 < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
-        d2 > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
+        date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
+        date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
+        date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
+        date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
     end
-    d1 = max(d1, firm_data.date_start, MARKET_DATA_CACHE.date_start)
-    d2 = min(d2, firm_data.date_end, MARKET_DATA_CACHE.date_end)
+    date_start = max(date_start, firm_data.date_start, MARKET_DATA_CACHE.date_start)
+    date_end = min(date_end, firm_data.date_end, MARKET_DATA_CACHE.date_end)
 
     if length(cols_market) == 0
         pos = 1:length(MARKET_DATA_CACHE.cols)
@@ -319,17 +324,17 @@ function get_market_data(id::Int, d1::Date, d2::Date, cols_market::String...; wa
         @assert all([c in MARKET_DATA_CACHE.cols for c in cols_market]) "Not all columns are in the data"
         pos = [col_pos(c, MARKET_DATA_CACHE.cols) for c in cols_market]
     end
-    MARKET_DATA_CACHE.data[data_range(MARKET_DATA_CACHE, firm_data, d1, d2), pos]
+    MARKET_DATA_CACHE.data[data_range(MARKET_DATA_CACHE, firm_data, date_start, date_end), pos]
 end
 
 # market data and firm data with same length
 """
     get_firm_market_data(
-        id::Int,
-        d1::Date,
-        d2::Date,
+        id::Real,
+        date_start::Date,
+        date_end::Date;
         cols_market::Union{Nothing, Vector{String}, String}=nothing,
-        col_firm::String;
+        col_firm::String,
         warn_dates::Bool=false
     )
 
@@ -337,11 +342,11 @@ Returns a Tuple of a vector of firm data and a matrix (or vector if only a Strin
 cols_market) of market data (matrix has same number of rows as vector length).
 """
 function get_firm_market_data(
-    id::Int,
-    d1::Date,
-    d2::Date,
+    id::Real,
+    date_start::Date,
+    date_end::Date;
     cols_market::Union{Nothing, Vector{String}, String}=nothing,
-    col_firm::String="ret";
+    col_firm::String="ret",
     warn_dates::Bool=false
 )
     if !haskey(FIRM_DATA_CACHE, id)
@@ -349,13 +354,13 @@ function get_firm_market_data(
     end
     firm_data = FIRM_DATA_CACHE[id]
     if warn_dates
-        d1 < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
-        d2 > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
-        d1 < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
-        d2 > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
+        date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
+        date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
+        date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
+        date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
     end
-    d1 = max(d1, firm_data.date_start, MARKET_DATA_CACHE.date_start)
-    d2 = min(d2, firm_data.date_end, MARKET_DATA_CACHE.date_end)
+    date_start = max(date_start, firm_data.date_start, MARKET_DATA_CACHE.date_start)
+    date_end = min(date_end, firm_data.date_end, MARKET_DATA_CACHE.date_end)
 
     if cols_market === nothing
         pos = 1:length(MARKET_DATA_CACHE.cols)
@@ -367,7 +372,7 @@ function get_firm_market_data(
         pos = col_pos(cols_market, MARKET_DATA_CACHE.cols)
     end
     (
-        firm_data.data[col_firm][data_range(firm_data, d1, d2)],
-        MARKET_DATA_CACHE.data[data_range(firm_data, MARKET_DATA_CACHE, d1, d2), pos]
+        firm_data.data[col_firm][data_range(firm_data, date_start, date_end)],
+        MARKET_DATA_CACHE.data[data_range(firm_data, MARKET_DATA_CACHE, date_start, date_end), pos]
     )
 end

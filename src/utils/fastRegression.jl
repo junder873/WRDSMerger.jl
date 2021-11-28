@@ -104,7 +104,7 @@ function cache_reg(
         cols_market = MARKET_DATA_CACHE.cols
     end
     quick_reg(
-        get_firm_market_data(id, est_min, est_max, cols_market, col_firm; warn_dates)...,
+        get_firm_market_data(id, est_min, est_max; cols_market, col_firm, warn_dates)...,
         cols_market,
         col_firm;
         minobs

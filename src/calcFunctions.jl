@@ -5,23 +5,23 @@ Statistics.std(rr::RegressionModel) = sqrt(var(rr))
 function Statistics.var(
     id::Int,
     date_start::Date,
-    date_end::Date,
-    col_market::String="vwretd",
-    col_firm::String="ret";
+    date_end::Date;
+    cols_market::String="vwretd",
+    col_firm::String="ret",
     warn_dates=false
 )
-    var((-).(get_firm_market_data(id, date_start, date_end, col_market, col_firm; warn_dates)...))
+    var((-).(get_firm_market_data(id, date_start, date_end; cols_market, col_firm, warn_dates)...))
 end
 
 function Statistics.std(
     id::Int,
     date_start::Date,
-    date_end::Date,
-    col_market::String="vwretd",
-    col_firm::String="ret";
+    date_end::Date;
+    cols_market::String="vwretd",
+    col_firm::String="ret",
     warn_dates=false
 )
-    sqrt(var(id, date_start, date_end, col_market, col_firm; warn_dates))
+    sqrt(var(id, date_start, date_end; cols_market, col_firm, warn_dates))
 end
 
 Statistics.var(rr::Missing) = missing
@@ -32,8 +32,8 @@ bhar(x, y) = bh_return(x) - bh_return(y)
 
 # for firm data
 """
-    bh_return(id::Int, d1::Date, d2::Date, col_firm::String="ret"; warn_dates::Bool=false)
-    bh_return(d1::Date, d2::Date, col_market::String="vwretd"; warn_dates::Bool=true)
+    bh_return(id::Int, date_start::Date, date_end::Date, col_firm::String="ret"; warn_dates::Bool=false)
+    bh_return(date_start::Date, date_end::Date, cols_market::String="vwretd"; warn_dates::Bool=true)
 
 Calculates the buy and hold returns (also called geometric return) for TimelineData. If an Integer
 is passed, then it is calculated based on the FIRM_DATA_CACHE (for the integer provided), otherwise
@@ -41,22 +41,22 @@ is calculated for the MARKET_DATA_CACHE.
 
 These functions treat missing returns in the period implicitly as a zero return.
 """
-function bh_return(id::Int, d1::Date, d2::Date, col_firm::String="ret"; warn_dates::Bool=false)
+function bh_return(id::Int, date_start::Date, date_end::Date, col_firm::String="ret"; warn_dates::Bool=false)
     if !haskey(FIRM_DATA_CACHE, id)
         return missing
     end
-    bh_return(get_firm_data(id, d1, d2, col_firm; warn_dates))
+    bh_return(get_firm_data(id, date_start, date_end, col_firm; warn_dates))
 end
 
 # for market data
-function bh_return(d1::Date, d2::Date, col_market::String="vwretd"; warn_dates::Bool=true)
-    bh_return(get_market_data(d1, d2, col_market; warn_dates))
+function bh_return(date_start::Date, date_end::Date, cols_market::String="vwretd"; warn_dates::Bool=true)
+    bh_return(get_market_data(date_start, date_end, cols_market; warn_dates))
 end
 
 
 """
-    bhar(id::Int, d1::Date, d2::Date, col_market::String="vwretd", col_firm::String="ret"; warn_dates::Bool=false)
-    bhar(id::Int, d1::Date, d2::Date, rr::Union{Missing, RegressionModel}; warn_dates::Bool=false)
+    bhar(id::Int, date_start::Date, date_end::Date, cols_market::String="vwretd", col_firm::String="ret"; warn_dates::Bool=false)
+    bhar(id::Int, date_start::Date, date_end::Date, rr::Union{Missing, RegressionModel}; warn_dates::Bool=false)
 
 Calculates the difference between buy and hold returns relative to the market. If a RegressionModel type is passed, then
 the expected return is estimated based on the regression (Fama French abnormal returns). Otherwise, the value is
@@ -66,22 +66,22 @@ These functions treat missing returns in the period implicitly as a zero return.
 """
 function bhar(
     id::Int,
-    d1::Date,
-    d2::Date,
-    col_market::String="vwretd",
-    col_firm::String="ret";
+    date_start::Date,
+    date_end::Date;
+    cols_market::String="vwretd",
+    col_firm::String="ret",
     warn_dates::Bool=false
 )
     if !haskey(FIRM_DATA_CACHE, id)
         return missing
     end
-    bh_return(id, d1, d2, col_firm; warn_dates) - bh_return(d1, d2, col_market; warn_dates)
+    bh_return(id, date_start, date_end, col_firm; warn_dates) - bh_return(date_start, date_end, cols_market; warn_dates)
 end
 
 function bhar(
     id::Int,
-    d1::Date,
-    d2::Date,
+    date_start::Date,
+    date_end::Date,
     rr::Union{Missing, RegressionModel};
     warn_dates::Bool=false
 )
@@ -89,12 +89,12 @@ function bhar(
     if !haskey(FIRM_DATA_CACHE, id)
         return missing
     end
-    bh_return(id, d1, d2, responsename(rr); warn_dates) - bh_return(predict(rr, d1, d2; warn_dates))
+    bh_return(id, date_start, date_end, responsename(rr); warn_dates) - bh_return(predict(rr, date_start, date_end; warn_dates))
 end
 
 """
-    car(id::Int, d1::Date, d2::Date, col_market::String="vwretd", col_firm::String="ret"; warn_dates::Bool=false)
-    car(id::Int, d1::Date, d2::Date, rr::Union{Missing, RegressionModel}; warn_dates::Bool=false)
+    car(id::Int, date_start::Date, date_end::Date, cols_market::String="vwretd", col_firm::String="ret"; warn_dates::Bool=false)
+    car(id::Int, date_start::Date, date_end::Date, rr::Union{Missing, RegressionModel}; warn_dates::Bool=false)
 
 Calculates the difference between cumulative returns relative to the market. If a RegressionModel type is passed, then
 the expected return is estimated based on the regression (Fama French abnormal returns). Otherwise, the value is
@@ -107,22 +107,22 @@ These functions treat missing returns in the period implicitly as a zero return.
 """
 function car(
     id::Int,
-    d1::Date,
-    d2::Date,
-    col_market::String="vwretd",
-    col_firm::String="ret";
+    date_start::Date,
+    date_end::Date;
+    cols_market::String="vwretd",
+    col_firm::String="ret",
     warn_dates::Bool=false
 )
     if !haskey(FIRM_DATA_CACHE, id)
         return missing
     end
-    sum(get_firm_data(id, d1, d2, col_firm; warn_dates)) - sum(get_market_data(d1, d2, col_market; warn_dates))
+    sum(get_firm_data(id, date_start, date_end, col_firm; warn_dates)) - sum(get_market_data(date_start, date_end, cols_market; warn_dates))
 end
 
 function car(
     id::Int,
-    d1::Date,
-    d2::Date,
+    date_start::Date,
+    date_end::Date,
     rr::Union{Missing, RegressionModel};
     warn_dates::Bool=false
 )
@@ -130,7 +130,7 @@ function car(
     if !haskey(FIRM_DATA_CACHE, id)
         return missing
     end
-    sum(get_firm_data(id, d1, d2, responsename(rr); warn_dates)) - sum(predict(rr, d1, d2; warn_dates))
+    sum(get_firm_data(id, date_start, date_end, responsename(rr); warn_dates)) - sum(predict(rr, date_start, date_end; warn_dates))
 end
 
 

@@ -256,7 +256,7 @@ est_start(x) = est_end(x) - BDay(149, :USNYSE)
 rr_market = cache_reg.(
         df_res.permno,
         est_start.(df_res.event_date),
-        est_end.(df_res.event_date),
+        est_end.(df_res.event_date);
         cols_market=["intercept", "mktrf"]
     )
 
@@ -278,8 +278,8 @@ cars = car.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.ev
 @test isapprox(round.(cars, sigdigits=3), df_res.car_ma)
 bhars = bhar.(df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), "mkt")
 @test isapprox(round.(bhars, sigdigits=3), df_res.bhar_ma)
-stds = std.(df_res.permno, est_start.(df_res.event_date), est_end.(df_res.event_date), "mkt")
-vars = var.(df_res.permno, est_start.(df_res.event_date), est_end.(df_res.event_date), "mkt")
+stds = std.(df_res.permno, est_start.(df_res.event_date), est_end.(df_res.event_date); cols_market="mkt")
+vars = var.(df_res.permno, est_start.(df_res.event_date), est_end.(df_res.event_date); cols_market="mkt")
 @test isapprox(round.(vars, digits=10), df_res.estimation_period_variance_market_adjusted_returns_)
 
 ##
