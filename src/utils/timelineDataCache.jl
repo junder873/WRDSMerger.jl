@@ -51,6 +51,9 @@ end
 const FIRM_DATA_CACHE = Dict{Int, FirmData}()
 const MARKET_DATA_CACHE = MarketData()
 
+global FIRM_DATES_OUT_OF_RANGE_WARNING = false
+global MARKET_DATES_OUT_OF_RANGE_WARNING = true
+
 function update_market_data_cache!(d1, d2, is_day, index, cols, data)
     @assert d2 >= d1 "End Date must be greater than Start Date"
     @assert length(is_day) == length(index) == Dates.value(d2 - d1) + 1 "Vector must equal total days."
@@ -235,6 +238,13 @@ data are provided, then returns a vector of integers to make sure the number of 
 in the market matrix matches the length of the data vector for the firm.
 """
 function data_range(timed_data::TimelineData, d1::Date, d2::Date)
+    if d1 > timed_data.date_end || d2 < timed_data.date_start || d2 < d1
+        return 1:0
+        # this deals with an edge case where everything is out of bounds
+        # and no data should be returned
+        # I leave the two asserts after this because I want the user to deal
+        # with the other case, not just adjust automatically
+    end
     @assert timed_data.date_start <= d1 <= timed_data.date_end "Date Value out of bounds"
     @assert timed_data.date_start <= d2 <= timed_data.date_end "Date Value out of bounds"
     timed_data.index[raw_pos(timed_data.date_start, d1)]:range_end(
@@ -249,27 +259,45 @@ function data_range(
     d1::Date,
     d2::Date
 )
+    if (
+        d1 > firm_data.date_end ||
+        d2 < firm_data.date_start ||
+        d2 < d1 ||
+        d1 > mkt_data.date_end ||
+        d2 < mkt_data.date_start
+    )
+        return 1:0
+    end
     #date_range(mkt_data, d1, d2)
+    @assert firm_data.date_start <= d1 <= firm_data.date_end "Date Value out of bounds"
+    @assert firm_data.date_start <= d2 <= firm_data.date_end "Date Value out of bounds"
+    @assert mkt_data.date_start <= d1 <= mkt_data.date_end "Date Value out of bounds"
+    @assert mkt_data.date_start <= d2 <= mkt_data.date_end "Date Value out of bounds"
     mkt_data.index[raw_range(mkt_data.date_start, d1, d2)[firm_data.is_day[raw_range(firm_data.date_start, d1, d2)]]]
 end
 
 
 """
-    get_firm_data(id::Real, date_start::Date, date_end::Date, col::String="ret"; warn_dates::Bool=false)
+    get_firm_data(id::Real, date_start::Date, date_end::Date, col::String="ret")
 
 Fetches a vector from the FIRM_DATA_CACHE for a specific firm over a date range.
 """
-function get_firm_data(id::Real, date_start::Date, date_end::Date, col::String="ret"; warn_dates::Bool=false)
+function get_firm_data(id::Real, date_start::Date, date_end::Date, col::String="ret")
     if !haskey(FIRM_DATA_CACHE, id)
-        return missing
+        @warn("Data for firm id $id is not stored in the cached data")
+        return [missing]
     end
     firm_data = FIRM_DATA_CACHE[id]
-    if warn_dates
+    if FIRM_DATES_OUT_OF_RANGE_WARNING
         date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
         date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
     end
     date_start = max(date_start, firm_data.date_start)
     date_end = min(date_end, firm_data.date_end)
+
+    if date_end < date_start
+        return [missing]
+    end
 
     firm_data.data[col][data_range(firm_data, date_start, date_end)]
 end
@@ -278,15 +306,15 @@ col_pos(x::String, cols::Vector{String}) = findfirst(isequal(x), cols)
 
 # only market data
 """
-    get_market_data(date_start::Date, date_end::Date, cols_market::String...; warn_dates::Bool=false)
+    get_market_data(date_start::Date, date_end::Date, cols_market::String...)
 
-    get_market_data(id::Real, date_start::Date, date_end::Date, cols_market::Union{Nothing, Vector{String}}=nothing; warn_dates::Bool=false)
+    get_market_data(id::Real, date_start::Date, date_end::Date, cols_market::Union{Nothing, Vector{String}}=nothing)
 
 Fetches a Matrix of market data between two dates, if an id (Integer) is provided, then the rows of the matrix will be the same
 length as the length of the vector for the firm betwee those two dates.
 """
-function get_market_data(date_start::Date, date_end::Date, cols_market::String...; warn_dates::Bool=false)
-    if warn_dates
+function get_market_data(date_start::Date, date_end::Date, cols_market::String...)
+    if MARKET_DATES_OUT_OF_RANGE_WARNING
         date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
         date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
     end
@@ -304,19 +332,26 @@ end
 
 # market data with same length as a firm data
 
-function get_market_data(id::Real, date_start::Date, date_end::Date, cols_market::String...; warn_dates::Bool=false)
+function get_market_data(id::Real, date_start::Date, date_end::Date, cols_market::String...)
     if !haskey(FIRM_DATA_CACHE, id)
-        return missing
+        @warn("Data for firm id $id is not stored in the cached data")
+        return [missing]
     end
     firm_data = FIRM_DATA_CACHE[id]
-    if warn_dates
+    if FIRM_DATES_OUT_OF_RANGE_WARNING
         date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
         date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
+    end
+    if MARKET_DATES_OUT_OF_RANGE_WARNING
         date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
         date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
     end
     date_start = max(date_start, firm_data.date_start, MARKET_DATA_CACHE.date_start)
     date_end = min(date_end, firm_data.date_end, MARKET_DATA_CACHE.date_end)
+
+    if date_end < date_start
+        return [missing]
+    end
 
     if length(cols_market) == 0
         pos = 1:length(MARKET_DATA_CACHE.cols)
@@ -334,8 +369,7 @@ end
         date_start::Date,
         date_end::Date;
         cols_market::Union{Nothing, Vector{String}, String}=nothing,
-        col_firm::String,
-        warn_dates::Bool=false
+        col_firm::String
     )
 
 Returns a Tuple of a vector of firm data and a matrix (or vector if only a String is passed for
@@ -346,21 +380,27 @@ function get_firm_market_data(
     date_start::Date,
     date_end::Date;
     cols_market::Union{Nothing, Vector{String}, String}=nothing,
-    col_firm::String="ret",
-    warn_dates::Bool=false
+    col_firm::String="ret"
 )
     if !haskey(FIRM_DATA_CACHE, id)
-        return missing
+        @warn("Data for firm id $id is not stored in the cached data")
+        return ([missing], [missing])
     end
     firm_data = FIRM_DATA_CACHE[id]
-    if warn_dates
+    if FIRM_DATES_OUT_OF_RANGE_WARNING
         date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
         date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
+    end
+    if MARKET_DATES_OUT_OF_RANGE_WARNING
         date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
         date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
     end
     date_start = max(date_start, firm_data.date_start, MARKET_DATA_CACHE.date_start)
     date_end = min(date_end, firm_data.date_end, MARKET_DATA_CACHE.date_end)
+
+    if date_end < date_start
+        return ([missing], [missing])
+    end
 
     if cols_market === nothing
         pos = 1:length(MARKET_DATA_CACHE.cols)
@@ -376,3 +416,11 @@ function get_firm_market_data(
         MARKET_DATA_CACHE.data[data_range(firm_data, MARKET_DATA_CACHE, date_start, date_end), pos]
     )
 end
+
+function clear_firm_cached_data!()
+    for key in keys(FIRM_DATA_CACHE)
+        delete!(FIRM_DATA_CACHE, key)
+    end
+end
+
+firm_in_cache(id::Real) = haskey(FIRM_DATA_CACHE, id)

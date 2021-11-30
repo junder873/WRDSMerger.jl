@@ -44,9 +44,7 @@ WRDSMerger.default_tables["comp_fundq"] = "compa_fundq"
 ...
 ```
 
-## Examples
-
-### Links between WRDS Identifiers
+## Links Between WRDS Identifiers
 
 A common task is linking two tables in WRDS. The most common identifiers are Permno (used in CRSP datasets), Cusip (used in a variety of datasets, and its historical version, NCusip), GVKey (Compustat datasets), and IBES Tickers (used in IBES). This package provides the function `link_identifiers` to link between these different identifiers (CIK and normal Tickers as well). It also provides a number of types to make it clear what identifier is being used. Most of these links (the only exception I know of is GVKey and CIK) are only valid for a specific range of dates. Therefore, you would pass the function some a vector of the initial type, vector of dates, and the types that you want to link to.
 
@@ -94,7 +92,7 @@ These types are also easily extandable. The current built-in types are:
 
 If there is another identifier that is not provided, all that is required is to specify a new type, subtyping the abstract type `FirmIdentifier`, a `convert` function that converts the new type to an `Integer` or `String`, and a  `LinkTable` that connects the new identifier to one of the existing identifiers. With those three, the merge function should work automatically.
 
-#### Type Standardization
+### Type Standardization
 
 Using these types can also help to standardize your dataset. For example, Cusips can vary by database and be 8 or 9 characters. For example, RavenPack uses 9 digit Cusips while most of CRSP uses 8 digits. There are many ways to standardize, but using the types you can run:
 ```julia
@@ -104,13 +102,13 @@ df2[!, :cusip] = WRDSMerger.value.(Cusip.(df2[:, :cusip]))
 
 This will check that the Cusip is valid (at least according to the checksum, not that it exists in a database) and converts it to an 8 digit Cusip. If you want 9 digits, then `WRDSMerger.value` accepts an optinal length argument, so run `WRDSMerger.value.(Cusip.(df1[:, :cusip]), 9)`.
 
-### Calculating Abnormal Returns and Other Return Statistics
+## Calculating Abnormal Returns and Other Return Statistics
 
 Another common task is calculating abnormal returns around a firm event, such as an earnings announcement or when a firm enters the S&P 500. This package provides a variety of functions to calculate those.
 
-#### Caching Firm and Market Data
+### Caching Firm and Market Data
 
-To make the calculations as fast as possible, this package relies on cached data to quickly access the return data. This package provides functions to save the data in data types similar to [BusinessDays.jl's](https://github.com/JuliaFinance/BusinessDays.jl) cached data, which makes accessing a range of data incredibly quick. Using GroupDataFrame and filtering, it took 10+ minutes to run a large number (100,000) of regressions. Using this cached data, the same regressions took less than 3 seconds.
+To make the calculations as fast as possible, this package relies on cached data to quickly access the return data. This package provides functions to save the data in data types similar to [BusinessDays.jl's](https://github.com/JuliaFinance/BusinessDays.jl) cached data, which makes accessing a range of data incredibly quick. Using GroupDataFrame and filtering, it took 10+ minutes to run a large number (175,000) of regressions. Using this cached data, the same regressions took less than 3 seconds.
 
 It is recommended to load market return data first so that the return dates for the firm data can be checked as valid dates. To load the market data into the cache, run:
 ```julia
@@ -131,7 +129,7 @@ FirmData(
 ```
 Depending on the amount of firm data, this might take some time. For example, tested on a Ryzen 3600, loading 36 million rows took about a minute. This is by far the slowest part of this, limiting the data will make the operations faster.
 
-#### Accessing Cached Data
+### Accessing Cached Data
 
 This package provides three functions for accessing the cached data. While these are available, most of the functions discussed later automatically use these, however, if you want to build your own functions these provide the basis for accessing the data quickly. Data for firms is stored in vectors, data for the market is stored in a matrix.
 
@@ -140,9 +138,9 @@ This package provides three functions for accessing the cached data. While these
 - `get_market_data(id, date_start, date_end, cols_market...)` also fetches data for the market, except will also make sure that the number of rows in the fetched matrix is the same as the dates that exist for the firm id provided. Since firms can be missing data relative to the market, this can make sure you are comparing equivalent data.
 - `get_firm_market_data(id, date_start, date_end; cols_market::Union{Nothing, Vector{String}, String}=nothing, col_firm::String="ret")` is a combination of the previous functions. It returns a tuple, with the first element being a vector of the requested firm data and the second being a matrix of firm data, similar to the previous function, the number of rows in the market matrix is the same as the length of the firm vector.
 
-#### Calculation Functions
+### Calculation Functions
 
-##### Regression Estimate
+#### Regression Estimate
 
 It is often necessary to estimate a regression model for a specific firm based on market data. The method is similar to the `get_firm_market_data` function previously described:
 ```julia
@@ -164,7 +162,7 @@ This function returns a `BasicReg` model, which is a subtype of the `RegressionM
 
 The `BasicReg` model is inentionally minimalistic, making it easy to save and is useful when running a large number of regressions.
 
-##### Variance and Standard Deviation
+#### Variance and Standard Deviation
 
 There are two common methods of calculating variance over a period for a firm. The first is to subtract the market return from the firm return and take the variance, given a period.
 ```julia
@@ -173,7 +171,7 @@ var[std](id, date_start, date_end; cols_market="vwretd", col_firm="ret")
 
 The second method is to calculate the variance after estimating a regression. This uses the error in the regression, `var[std](rr)` where `rr` is a `RegressionModel`.
 
-##### Buy and Hold Returns
+#### Buy and Hold Returns
 
 Buy and hold returns are also known as geometric returns. The API for these functions is similar to `get_firm_data` and `get_market_data`:
 
@@ -183,7 +181,7 @@ bh_return([id], date_start, date_end, col)
 
 If and `id` provided, then this is used for the market return.
 
-##### Abnormal Returns
+#### Abnormal Returns
 
 There are two types of common abnormal returns, buy and hold (bhar) and cumulative (car). These all work by subtracting some expected return from the firm's actual return. The expected return is either the market average or estimated based on a firm-specific regression model.
 
@@ -197,7 +195,7 @@ To calculate abnormal returns relative to a regression, run:
 bhar[car](id, date_start, date_end, rr)
 ```
 
-##### Example
+### Example
 
 Assume you have a DataFrame of firm-events:
 ```julia

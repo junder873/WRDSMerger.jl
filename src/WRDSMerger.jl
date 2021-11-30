@@ -38,7 +38,8 @@ export comp_data, crsp_data, crsp_market, crsp_stocknames,
 export TimelineData, FirmData, car, alpha, beta,
     MarketData, get_firm_data, get_market_data,
     get_firm_market_data, BasicReg, cache_reg,
-    bh_return, bhar
+    bh_return, bhar, clear_firm_cached_data!,
+    firm_in_cache
 
 # extra utilities
 export range_join, BDay, Conditions

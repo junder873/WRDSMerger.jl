@@ -239,6 +239,26 @@ temp = innerjoin(
 )
 temp[!, :mkt] = temp.mktrf .+ temp.rf
 MarketData(temp, force_update=true)
+
+##
+# check that missing values do not break anything
+
+@test @test_logs (:warn,) cache_reg(1, Date(2020), Date(2021); cols_market=["intercept", "mktrf"]) |> ismissing
+@test var(missing) |> ismissing
+@test std(missing) |> ismissing
+@test car(1, Date(2020), Date(2021), missing) |> ismissing
+@test @test_logs (:warn,) car(1, Date(2020), Date(2021); cols_market="mkt") |> ismissing
+@test bhar(1, Date(2020), Date(2021), missing) |> ismissing
+@test @test_logs (:warn,)  bhar(1, Date(2020), Date(2021); cols_market="mkt") |> ismissing
+@test alpha(missing) |> ismissing
+@test beta(missing) |> ismissing
+
+##
+
+@test cache_reg(76185, Date(1980), Date(1985); cols_market=["intercept", "mktrf"]) |> ismissing
+@test car(76185, Date(1980), Date(1985); cols_market="mkt") |> ismissing
+@test bhar(76185, Date(1980), Date(1985); cols_market="mkt") |> ismissing
+
 ##
 
 df_res = CSV.File(joinpath("data", "car_results.csv")) |> DataFrame
