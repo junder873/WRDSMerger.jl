@@ -225,9 +225,10 @@ end
 
 function adjust_date_cols(df::DataFrame, table::LinkTable, date_min::Date, date_max::Date)
     if ismissing(table.date_col_max) && !ismissing(table.date_col_min)
+        col = Dict(table.type_translations...)[table.id_cols[1]] |> string
         df[!, table.date_col_min] = coalesce.(df[:, table.date_col_min], date_min)
-        sort!(df, [table.id_cols[1], table.date_col_min])
-        gdf = groupby(df, [table.id_cols[1]])
+        sort!(df, [col, table.date_col_min])
+        gdf = groupby(df, [col])
         df = transform(gdf, table.date_col_min => lead => "date_max")
         df[!, "date_max"] = coalesce.(df[:, "date_max"] .- Day(1), date_max)# I subtract a day since use <= later
         table.date_col_max = "date_max"
