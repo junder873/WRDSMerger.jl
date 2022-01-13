@@ -1,28 +1,55 @@
 
 parse_date(d) = ismissing(d) ? missing : Date(d)
+parse_time(d) = ismissing(d) ? missing : Time(d)
+parse_datetime(d) = ismissing(d) ? missing : DateTime(d)
+parse_int(x) = ismissing(x) ? missing : Int(x)
 
-run_sql_query(conn::LibPQ.Connection, q::AbstractString) = LibPQ.execute(conn, q) |> DataFrame
-function run_sql_query(
-    conn::DBInterface.Connection,
-    q::AbstractString;
-    date_cols=[
-        "date",
-        "datadate",
-        "namedt",
-        "nameenddt",
-        "sdate",
-        "edate",
-        "linkdt",
-        "linkenddt"
-    ]
-)
-    temp = DBInterface.execute(conn, q) |> DataFrame
-    for col in date_cols
-        if col ∈ names(temp)
-            temp[!, col] = parse_date.(temp[:, col])
+check_if_date(d) = ismissing(d) || tryparse(Date, d) !== nothing
+check_if_time(d) = ismissing(d) || tryparse(Time, d) !== nothing
+check_if_datetime(d) = ismissing(d) || tryparse(DateTime, d) !== nothing
+integer_or_missing(x) = ismissing(x) || isinteger(x)
+
+function modify_col!(df, col)
+    all_missing = all(ismissing.(df[:, col]))
+    if !all_missing && nonmissintype(eltype(df[:, col])) <: Real
+        if all(integer_or_missing.(df[:, col]))
+            df[!, col] = parse_int.(df[:, col])
         end
     end
-    return temp
+    if !all_missing && nonmissingtype(eltype(df[:, col])) <: AbstractString
+        if all(check_if_date.(df[:, col]))
+            df[!, col] = parse_date.(df[:, col])
+        elseif all(check_if_time.(df[:, col]))
+            df[!, col] = parse_time.(df[:, col])
+        elseif all(check_if_datetime.(df[:, col]))
+            df[!, col] = parse_datetime.(df[:, col])
+        end
+    end
+    if !all_missing && any(ismissing.(df[:, col]))
+        disallowmissing!(df, col)
+    end
+end
+
+function run_sql_query(
+    conn::LibPQ.Connection,
+    q::AbstractString
+)
+    df = LibPQ.execute(conn, q) |> DataFrame
+    for col in names(df)
+        modify_col!(df, col)
+    end
+    df
+end
+
+function run_sql_query(
+    conn::DBInterface.Connection,
+    q::AbstractString
+)
+    df = DBInterface.execute(conn, q) |> DataFrame
+    for col in names(df)
+        modify_col!(df, col)
+    end
+    df
 end
 
 struct Conditions

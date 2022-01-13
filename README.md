@@ -44,6 +44,14 @@ WRDSMerger.default_tables["comp_fundq"] = "compa_fundq"
 ...
 ```
 
+### ODBC vs LibPQ
+
+The two largest packages I am aware of for connecting to a Postgres database in Lulia are [ODBC.jl](https://github.com/JuliaDatabases/ODBC.jl) and [LibPQ.jl](https://github.com/invenia/LibPQ.jl). Both of these have various advantages.
+
+Starting with LibPQ, adding LibPQ to your project is the full installation process. To use ODBC, an extra driver, with extra setup, needs to occur before use. In addition, as far as I can tell, LibPQ does not have a limit on length of query. Some functions in this package (such as `crsp_data`) create exceptionally long queries to reduce the total amount of data downloaded, which LibPQ handles easily.
+
+For ODBC, it is considerably faster at converting data to a DataFrame. For example, downloading the full CRSP Stockfile (`crsp.dsf`, which includes returns for every stock for each day and is about 100 million rows), takes about 4 minutes to download and make into a DataFrame with ODBC on a gigabit connection. LibPQ takes about 24 minutes. Most of this difference appears to be type instability while converting the LibPQ result to a DataFrame, since the initial LibPQ result only takes a minute and `@time` reports 80% garbage collection time. ODBC also stores your password separately (in the driver settings) making it a little easier to share a project without compromising your password.
+
 ## Links Between WRDS Identifiers
 
 A common task is linking two tables in WRDS. The most common identifiers are Permno (used in CRSP datasets), Cusip (used in a variety of datasets, and its historical version, NCusip), GVKey (Compustat datasets), and IBES Tickers (used in IBES). This package provides the function `link_identifiers` to link between these different identifiers (CIK and normal Tickers as well). It also provides a number of types to make it clear what identifier is being used. Most of these links (the only exception I know of is GVKey and CIK) are only valid for a specific range of dates. Therefore, you would pass the function some a vector of the initial type, vector of dates, and the types that you want to link to.
