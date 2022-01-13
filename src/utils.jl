@@ -25,7 +25,7 @@ function modify_col!(df, col)
             df[!, col] = parse_datetime.(df[:, col])
         end
     end
-    if !all_missing && any(ismissing.(df[:, col]))
+    if !all_missing && !any(ismissing.(df[:, col]))
         disallowmissing!(df, col)
     end
 end
