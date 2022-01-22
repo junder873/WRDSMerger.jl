@@ -1,27 +1,79 @@
 
-parse_date(d) = ismissing(d) ? missing : Date(d)
-parse_time(d) = ismissing(d) ? missing : Time(d)
-parse_datetime(d) = ismissing(d) ? missing : DateTime(d)
-parse_int(x) = ismissing(x) ? missing : Int(x)
+# this is an improvement but I worry that the check_if_date
+# and time in particular might be overly aggressive
+# using regex prevents a lot of these cases
+parse_date(::Missing) = missing
+parse_time(::Missing) = missing
+parse_datetime(::Missing) = missing
+parse_int(::Missing) = missing
+parse_date(d) = Date(d)
+parse_time(d) = Time(d)
+parse_datetime(d) = DateTime(d)
+parse_int(x) = Int(x)
 
-check_if_date(d) = ismissing(d) || tryparse(Date, d) !== nothing
-check_if_time(d) = ismissing(d) || tryparse(Time, d) !== nothing
-check_if_datetime(d) = ismissing(d) || tryparse(DateTime, d) !== nothing
-integer_or_missing(x) = ismissing(x) || isinteger(x)
+check_if_date(d::Missing) = true
+check_if_time(d::Missing) = true
+check_if_datetime(d::Missing) = true
+function check_if_date(d::AbstractString)
+    x = match(r"\d{4}-\d{1,2}-\d{1,2}", d)
+    x === nothing && return false
+    x.match == d && tryparse(Date, d) !== nothing
+end
+function check_if_time(d::AbstractString)
+    x = match(r"\d{2}:\d{2}:\d{2}\.\d{1,4}", d)
+    x === nothing && return false
+    x.match == d && tryparse(Time, d) !== nothing
+end
+function check_if_datetime(d::AbstractString)
+    x = match(r"\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{1,4}", d)
+    x === nothing && return false
+    x.match == d && tryparse(DateTime, d) !== nothing
+end
+function check_if_date(d::AbstractVector)
+    for x in d
+        check_if_date(x) && continue
+        return false
+    end
+    return true
+end
+function check_if_time(d::AbstractVector)
+    for x in d
+        check_if_time(x) && continue
+        return false
+    end
+    return true
+end
+function check_if_datetime(d::AbstractVector)
+    for x in d
+        check_if_date(x) && continue
+        return false
+    end
+    return true
+end
+
+function integer_or_missing(x::AbstractVector)
+    for i in x
+        ismissing(i) && continue
+        isinteger(i) && continue
+        return false
+    end
+    return true
+end
+
 
 function modify_col!(df, col)
     all_missing = all(ismissing.(df[:, col]))
-    if !all_missing && nonmissintype(eltype(df[:, col])) <: Real
-        if all(integer_or_missing.(df[:, col]))
+    if !all_missing && nonmissingtype(eltype(df[:, col])) <: Real
+        if integer_or_missing(df[:, col])
             df[!, col] = parse_int.(df[:, col])
         end
     end
     if !all_missing && nonmissingtype(eltype(df[:, col])) <: AbstractString
-        if all(check_if_date.(df[:, col]))
+        if check_if_date(df[:, col])
             df[!, col] = parse_date.(df[:, col])
-        elseif all(check_if_time.(df[:, col]))
+        elseif check_if_time(df[:, col])
             df[!, col] = parse_time.(df[:, col])
-        elseif all(check_if_datetime.(df[:, col]))
+        elseif check_if_datetime(df[:, col])
             df[!, col] = parse_datetime.(df[:, col])
         end
     end
