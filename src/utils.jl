@@ -1,7 +1,5 @@
 
-# this is an improvement but I worry that the check_if_date
-# and time in particular might be overly aggressive
-# using regex prevents a lot of these cases
+
 parse_date(::Missing) = missing
 parse_time(::Missing) = missing
 parse_datetime(::Missing) = missing
@@ -60,26 +58,44 @@ function integer_or_missing(x::AbstractVector)
     return true
 end
 
+"""
+`modify_col!` tries to identify the real type of a column, especially for strings
+that are actually dates or floats that are actually integers. Almost all data downloaded
+from WRDS correctly specifies dates, but all numbers are stored as float8, even items like
+`year` which should be an integer. This uses multiple dispatch to check if all elements
+in a given column are compatible with changing type and then changes the type of the
+column. Note that for strings this function does not by default try to convert integer
+like strings to integer (such as GVKey), it only converts strings that look like a date,
+datetime, or time.
+"""
+function modify_col!(df::AbstractDataFrame, col::String, ::Type{<:AbstractString})
+    if check_if_date(df[:, col])
+        df[!, col] = parse_date.(df[:, col])
+    elseif check_if_time(df[:, col])
+        df[!, col] = parse_time.(df[:, col])
+    elseif check_if_datetime(df[:, col])
+        df[!, col] = parse_datetime.(df[:, col])
+    end
+end
 
-function modify_col!(df, col)
+function modify_col!(df::AbstractDataFrame, col::String, ::Type{<:Real})
+    if integer_or_missing(df[:, col])
+        df[!, col] = parse_int.(df[:, col])
+    end
+end
+
+function modify_col!(df::AbstractDataFrame, col::String, ::Type{Union{Missing, A}}) where {A <: Any}
     all_missing = all(ismissing.(df[:, col]))
-    if !all_missing && nonmissingtype(eltype(df[:, col])) <: Real
-        if integer_or_missing(df[:, col])
-            df[!, col] = parse_int.(df[:, col])
+    if !all_missing # if all items are missing, do not modify the column since it is uncertain what
+        # it should be modified to
+        modify_col!(df, col, A)
+        if !any(ismissing.(df[:, col]))
+            disallowmissing!(df, col)
         end
     end
-    if !all_missing && nonmissingtype(eltype(df[:, col])) <: AbstractString
-        if check_if_date(df[:, col])
-            df[!, col] = parse_date.(df[:, col])
-        elseif check_if_time(df[:, col])
-            df[!, col] = parse_time.(df[:, col])
-        elseif check_if_datetime(df[:, col])
-            df[!, col] = parse_datetime.(df[:, col])
-        end
-    end
-    if !all_missing && !any(ismissing.(df[:, col]))
-        disallowmissing!(df, col)
-    end
+end
+
+function modify_col!(df::AbstractDataFrame, col::String, ::Type{<:Any})
 end
 
 function run_sql_query(
@@ -88,7 +104,7 @@ function run_sql_query(
 )
     df = LibPQ.execute(conn, q) |> DataFrame
     for col in names(df)
-        modify_col!(df, col)
+        modify_col!(df, col, eltype(df[:, col]))
     end
     df
 end
@@ -99,7 +115,7 @@ function run_sql_query(
 )
     df = DBInterface.execute(conn, q) |> DataFrame
     for col in names(df)
-        modify_col!(df, col)
+        modify_col!(df, col, eltype(df[:, col]))
     end
     df
 end
