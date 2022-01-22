@@ -1,28 +1,123 @@
 
-parse_date(d) = ismissing(d) ? missing : Date(d)
 
-run_sql_query(conn::LibPQ.Connection, q::AbstractString) = LibPQ.execute(conn, q) |> DataFrame
-function run_sql_query(
-    conn::DBInterface.Connection,
-    q::AbstractString;
-    date_cols=[
-        "date",
-        "datadate",
-        "namedt",
-        "nameenddt",
-        "sdate",
-        "edate",
-        "linkdt",
-        "linkenddt"
-    ]
-)
-    temp = DBInterface.execute(conn, q) |> DataFrame
-    for col in date_cols
-        if col ∈ names(temp)
-            temp[!, col] = parse_date.(temp[:, col])
+parse_date(::Missing) = missing
+parse_time(::Missing) = missing
+parse_datetime(::Missing) = missing
+parse_int(::Missing) = missing
+parse_date(d) = Date(d)
+parse_time(d) = Time(d)
+parse_datetime(d) = DateTime(d)
+parse_int(x) = Int(x)
+
+check_if_date(d::Missing) = true
+check_if_time(d::Missing) = true
+check_if_datetime(d::Missing) = true
+function check_if_date(d::AbstractString)
+    x = match(r"\d{4}-\d{1,2}-\d{1,2}", d)
+    x === nothing && return false
+    x.match == d && tryparse(Date, d) !== nothing
+end
+function check_if_time(d::AbstractString)
+    x = match(r"\d{2}:\d{2}:\d{2}\.\d{1,4}", d)
+    x === nothing && return false
+    x.match == d && tryparse(Time, d) !== nothing
+end
+function check_if_datetime(d::AbstractString)
+    x = match(r"\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{1,4}", d)
+    x === nothing && return false
+    x.match == d && tryparse(DateTime, d) !== nothing
+end
+function check_if_date(d::AbstractVector)
+    for x in d
+        check_if_date(x) && continue
+        return false
+    end
+    return true
+end
+function check_if_time(d::AbstractVector)
+    for x in d
+        check_if_time(x) && continue
+        return false
+    end
+    return true
+end
+function check_if_datetime(d::AbstractVector)
+    for x in d
+        check_if_date(x) && continue
+        return false
+    end
+    return true
+end
+
+function integer_or_missing(x::AbstractVector)
+    for i in x
+        ismissing(i) && continue
+        isinteger(i) && continue
+        return false
+    end
+    return true
+end
+
+"""
+`modify_col!` tries to identify the real type of a column, especially for strings
+that are actually dates or floats that are actually integers. Almost all data downloaded
+from WRDS correctly specifies dates, but all numbers are stored as float8, even items like
+`year` which should be an integer. This uses multiple dispatch to check if all elements
+in a given column are compatible with changing type and then changes the type of the
+column. Note that for strings this function does not by default try to convert integer
+like strings to integer (such as GVKey), it only converts strings that look like a date,
+datetime, or time.
+"""
+function modify_col!(df::AbstractDataFrame, col::String, ::Type{<:AbstractString})
+    if check_if_date(df[:, col])
+        df[!, col] = parse_date.(df[:, col])
+    elseif check_if_time(df[:, col])
+        df[!, col] = parse_time.(df[:, col])
+    elseif check_if_datetime(df[:, col])
+        df[!, col] = parse_datetime.(df[:, col])
+    end
+end
+
+function modify_col!(df::AbstractDataFrame, col::String, ::Type{<:Real})
+    if integer_or_missing(df[:, col])
+        df[!, col] = parse_int.(df[:, col])
+    end
+end
+
+function modify_col!(df::AbstractDataFrame, col::String, ::Type{Union{Missing, A}}) where {A <: Any}
+    all_missing = all(ismissing.(df[:, col]))
+    if !all_missing # if all items are missing, do not modify the column since it is uncertain what
+        # it should be modified to
+        modify_col!(df, col, A)
+        if !any(ismissing.(df[:, col]))
+            disallowmissing!(df, col)
         end
     end
-    return temp
+end
+
+function modify_col!(df::AbstractDataFrame, col::String, ::Type{<:Any})
+end
+
+function run_sql_query(
+    conn::LibPQ.Connection,
+    q::AbstractString
+)
+    df = LibPQ.execute(conn, q) |> DataFrame
+    for col in names(df)
+        modify_col!(df, col, eltype(df[:, col]))
+    end
+    df
+end
+
+function run_sql_query(
+    conn::DBInterface.Connection,
+    q::AbstractString
+)
+    df = DBInterface.execute(conn, q) |> DataFrame
+    for col in names(df)
+        modify_col!(df, col, eltype(df[:, col]))
+    end
+    df
 end
 
 struct Conditions
