@@ -9,13 +9,6 @@
 # LinkResult(id, d1::Date, ::Missing) = LinkResult(id, d1)
 # LinkResult(id, ::Missing, ::Missing) = LinkResult(id)
 
-# function LinkResult(id_vec::Vector{T}, date1_vec::Vector{Date}, date2_vec::Vector{Date}) where {T <: FirmIdentifier}
-#     out = Dict{T, Tuple{Date, Date}}()
-#     for i in 1:length(id_vec)
-#         if haskey(out, id_vec[i]) && # this is a problem, how do deal with the multiple cases
-
-
-
 # struct IDLinkDict{T<:FirmIdentifier, W, D1, D2}
 #     links::Dict{T, Vector{LinkResult{W, D1, D2}}}
 # end
@@ -47,7 +40,7 @@
 #     # assumes the vector is sorted by dates
 #     for v in res
 #         if v.date_start <= date <= v.date_end
-#             return get_id(v)
+#             return [get_id(v)]
 #         end
 #     end
 #     return W[]
@@ -331,6 +324,7 @@ function adjust_date_cols(df::DataFrame, table::LinkTable, date_min::Date, date_
         """
         d_cols = [table.date_col_min, table.date_col_max]
         g_cols = [string(t) for (i, t) in table.type_translations]
+        subset!(df, d_cols => ByRow((x, y) -> y > x))
         transform!(df, d_cols => ByRow((x, y) -> x:Day(1):y) => :date_range)
         df = combine(groupby(df, g_cols), :date_range => merge_date_ranges => :date_range)
         transform!(df, :date_range => ByRow(x -> (f=x[1], g=x[end])) => d_cols)
