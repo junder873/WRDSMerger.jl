@@ -324,7 +324,7 @@ function adjust_date_cols(df::DataFrame, table::LinkTable, date_min::Date, date_
         """
         d_cols = [table.date_col_min, table.date_col_max]
         g_cols = [string(t) for (i, t) in table.type_translations]
-        subset!(df, d_cols => ByRow((x, y) -> y > x))
+        subset!(df, d_cols => ByRow((x, y) -> y >= x))
         transform!(df, d_cols => ByRow((x, y) -> x:Day(1):y) => :date_range)
         df = combine(groupby(df, g_cols), :date_range => merge_date_ranges => :date_range)
         transform!(df, :date_range => ByRow(x -> (f=x[1], g=x[end])) => d_cols)
