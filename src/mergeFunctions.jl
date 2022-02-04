@@ -5,6 +5,10 @@
 #     date_end::D2
 # end
 
+# LinkResult(id, d1::Union{Nothing, Date}=nothing, d2::Union{Nothing, Date}=nothing) = LinkResult(id, d1, d2)
+# LinkResult(id, d1::Date, ::Missing) = LinkResult(id, d1)
+# LinkResult(id, ::Missing, ::Missing) = LinkResult(id)
+
 # function LinkResult(id_vec::Vector{T}, date1_vec::Vector{Date}, date2_vec::Vector{Date}) where {T <: FirmIdentifier}
 #     out = Dict{T, Tuple{Date, Date}}()
 #     for i in 1:length(id_vec)
@@ -20,25 +24,28 @@
 
 
 # function Base.getindex(links::IDLinkDict{T}, id::T) where {T <: FirmIdentifier}
-#     get_id.(links[id].links)
+#     get_id.(links.links[id]) |> unique
+# end
+
+# function Base.getindex(links::IDLinkDict{T, W, D1, D2}, id::T, date::Date) where {T, W <: FirmIdentifier, D1, D2 <: Nothing}
+#     links[id]
 # end
 
 # function Base.getindex(links::IDLinkDict{T, W, D1, D2}, id::T, date::Date) where {T, W <: FirmIdentifier, D1, D2 <: Date}
-#     res = links[id]
+#     res = links.links[id]
 #     out = W[]
-#     for v in res.links
+#     for v in res
 #         if v.date_start <= date <= v.date_end
 #             push!(out, get_id(v))
 #         end
 #     end
-#     return out
+#     return out |> unique
 # end
 
 # function Base.getindex(links::IDLinkDict{T, W, D1, D2}, id::T, date::Date) where {T, W <: FirmIdentifier, D1 <: Date, D2 <: Nothing}
-#     res = links[id]
-
+#     res = links.links[id]
 #     # assumes the vector is sorted by dates
-#     for v in res.links
+#     for v in res
 #         if v.date_start <= date <= v.date_end
 #             return get_id(v)
 #         end
@@ -327,6 +334,7 @@ function adjust_date_cols(df::DataFrame, table::LinkTable, date_min::Date, date_
         transform!(df, d_cols => ByRow((x, y) -> x:Day(1):y) => :date_range)
         df = combine(groupby(df, g_cols), :date_range => merge_date_ranges => :date_range)
         transform!(df, :date_range => ByRow(x -> (f=x[1], g=x[end])) => d_cols)
+        select!(df, Not(:date_range))
         df = subset(
             groupby(df, g_cols),
             d_cols => (x, y) -> date_checks(x, y)
