@@ -1,4 +1,44 @@
 
+# struct LinkResult{T<:FirmIdentifier, V<:Union{Tuple{Nothing, Nothing}, Tuple{Date, Nothing}, Tuple{Date, Date}}}
+#     link::Dict{T, V}
+# end
+
+# function LinkResult(id_vec::Vector{T}, date1_vec::Vector{Date}, date2_vec::Vector{Date}) where {T <: FirmIdentifier}
+#     out = Dict{T, Tuple{Date, Date}}()
+#     for i in 1:length(id_vec)
+#         if haskey(out, id_vec[i]) && # this is a problem, how do deal with the multiple cases
+
+
+
+# struct IDLinkDict{T<:FirmIdentifier, W, V}
+#     links::Dict{T, LinkResult{W, V}}
+# end
+
+# function Base.getindex(links::IDLinkDict{T, W}, id::T) where {T, W <: FirmIdentifier}
+#     keys(links[id]) |> collect
+# end
+
+# function Base.getindex(links::IDLinkDict{T, W, V}, id::T, date::Date) where {T, W <: FirmIdentifier, V <: Tuple{Date, Date}}
+#     res = links[id]
+#     out = W[]
+#     for (key, val) in res
+#         if val[1] <= date <= val[2]
+#             push!(out, key)
+#         end
+#     end
+#     return out
+# end
+
+# function Base.getindex(links::IDLinkDict{T, W, V}, id::T, date::Date) where {T, W <: FirmIdentifier, V <: Tuple{Date, Nothing}}
+#     res = links[id]
+#     for (key, val) in sort(res, byvalue=true)
+#         if val[1] <= date
+#             return [key]
+#         end
+#     end
+#     return W[]
+# end
+
 mutable struct LinkTable
     table::String # table name
     id_cols::Vector{String} # id cols as they exist in the database
@@ -133,6 +173,31 @@ function date_cols(table::LinkTable)
     x
 end
 
+function date_subset(
+    x::Tuple{Date, Date},
+    y::Tuple{Date, Date}
+)
+    x[1] >= y[1] && x[2] <= y[2]
+end
+function date_checks(
+    d_vec1,
+    d_vec2
+)
+    if length(d_vec1) == 1
+        return [true]
+    end
+    out = ones(Bool, length(d_vec1))
+    for (i, x) in enumerate(zip(d_vec1, d_vec2))
+        for y in zip(d_vec1, d_vec2)
+            if x != y && date_subset(x, y)
+                out[i] = false
+                break
+            end
+        end
+    end
+    out
+end
+
 """
 function link_table(
     conn,
@@ -171,6 +236,26 @@ function link_table(
     for (col, t) in table.type_translations
         df[!, col] = t.(df[:, col])
         rename!(df, col => string(t))
+    end
+    """
+    CRSP seems to have updated the main table used (crsp.stocknames) so that
+    there are a bunch of repeated values where a linked pair is a complete
+    subset of another set of dates, this tries to correct for that.
+
+    This is only necessary in the case that all data comes from WRDS,
+    if both date columns are missing then this does not matter and if
+    one is missing the adjust_date_cols function handles it as well.
+    """
+    if !ismissing(table.date_col_max) && !ismissing(table.date_col_min)
+        d_cols = [table.date_col_min, table.date_col_max]
+        g_cols = [string(t) for (i, t) in table.type_translations]
+        transform!(df, d_cols => ByRow((x, y) -> x:Day(1):y) => :date_range)
+        df = combine(groupby(df, g_cols), :date_range => merge_date_ranges => :date_range)
+        transform!(df, :date_range => ByRow(x -> (f=x[1], g=x[end])) => d_cols)
+        df = subset(
+            groupby(df, g_cols),
+            d_cols => (x, y) -> date_checks(x, y)
+        )
     end
     return df
 end
@@ -323,7 +408,6 @@ function link_identifiers(
         date=dates
     ) |> unique
     rename!(df, "ids" => string(T))
-
     tree = build_tree(T) # tree starts from provided type and goes to all available types
     show_tree && print_tree(tree)
     list = vcat([
