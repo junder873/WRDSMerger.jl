@@ -1,6 +1,8 @@
 
-# struct LinkResult{T<:FirmIdentifier, V<:Union{Tuple{Nothing, Nothing}, Tuple{Date, Nothing}, Tuple{Date, Date}}}
-#     link::Dict{T, V}
+# struct LinkResult{T<:FirmIdentifier, D1<:Union{Nothing, Date}, D2<:Union{Nothing, Date}}
+#     id::T
+#     date_start::D1
+#     date_end::D2
 # end
 
 # function LinkResult(id_vec::Vector{T}, date1_vec::Vector{Date}, date2_vec::Vector{Date}) where {T <: FirmIdentifier}
@@ -10,30 +12,35 @@
 
 
 
-# struct IDLinkDict{T<:FirmIdentifier, W, V}
-#     links::Dict{T, LinkResult{W, V}}
+# struct IDLinkDict{T<:FirmIdentifier, W, D1, D2}
+#     links::Dict{T, Vector{LinkResult{W, D1, D2}}}
 # end
 
-# function Base.getindex(links::IDLinkDict{T, W}, id::T) where {T, W <: FirmIdentifier}
-#     keys(links[id]) |> collect
+# get_id(x::LinkResult) = x.id
+
+
+# function Base.getindex(links::IDLinkDict{T}, id::T) where {T <: FirmIdentifier}
+#     get_id.(links[id].links)
 # end
 
-# function Base.getindex(links::IDLinkDict{T, W, V}, id::T, date::Date) where {T, W <: FirmIdentifier, V <: Tuple{Date, Date}}
+# function Base.getindex(links::IDLinkDict{T, W, D1, D2}, id::T, date::Date) where {T, W <: FirmIdentifier, D1, D2 <: Date}
 #     res = links[id]
 #     out = W[]
-#     for (key, val) in res
-#         if val[1] <= date <= val[2]
-#             push!(out, key)
+#     for v in res.links
+#         if v.date_start <= date <= v.date_end
+#             push!(out, get_id(v))
 #         end
 #     end
 #     return out
 # end
 
-# function Base.getindex(links::IDLinkDict{T, W, V}, id::T, date::Date) where {T, W <: FirmIdentifier, V <: Tuple{Date, Nothing}}
+# function Base.getindex(links::IDLinkDict{T, W, D1, D2}, id::T, date::Date) where {T, W <: FirmIdentifier, D1 <: Date, D2 <: Nothing}
 #     res = links[id]
-#     for (key, val) in sort(res, byvalue=true)
-#         if val[1] <= date
-#             return [key]
+
+#     # assumes the vector is sorted by dates
+#     for v in res.links
+#         if v.date_start <= date <= v.date_end
+#             return get_id(v)
 #         end
 #     end
 #     return W[]
@@ -237,26 +244,6 @@ function link_table(
         df[!, col] = t.(df[:, col])
         rename!(df, col => string(t))
     end
-    """
-    CRSP seems to have updated the main table used (crsp.stocknames) so that
-    there are a bunch of repeated values where a linked pair is a complete
-    subset of another set of dates, this tries to correct for that.
-
-    This is only necessary in the case that all data comes from WRDS,
-    if both date columns are missing then this does not matter and if
-    one is missing the adjust_date_cols function handles it as well.
-    """
-    if !ismissing(table.date_col_max) && !ismissing(table.date_col_min)
-        d_cols = [table.date_col_min, table.date_col_max]
-        g_cols = [string(t) for (i, t) in table.type_translations]
-        transform!(df, d_cols => ByRow((x, y) -> x:Day(1):y) => :date_range)
-        df = combine(groupby(df, g_cols), :date_range => merge_date_ranges => :date_range)
-        transform!(df, :date_range => ByRow(x -> (f=x[1], g=x[end])) => d_cols)
-        df = subset(
-            groupby(df, g_cols),
-            d_cols => (x, y) -> date_checks(x, y)
-        )
-    end
     return df
 end
 
@@ -325,6 +312,25 @@ function adjust_date_cols(df::DataFrame, table::LinkTable, date_min::Date, date_
     else
         df[!, table.date_col_min] = coalesce.(df[:, table.date_col_min], date_min)
         df[!, table.date_col_max] = coalesce.(df[:, table.date_col_max], date_max)
+
+        """
+        CRSP seems to have updated the main table used (crsp.stocknames) so that
+        there are a bunch of repeated values where a linked pair is a complete
+        subset of another set of dates, this tries to correct for that.
+    
+        This is only necessary in the case that all data comes from WRDS,
+        if both date columns are missing then this does not matter and if
+        one is missing the adjust_date_cols function handles it as well.
+        """
+        d_cols = [table.date_col_min, table.date_col_max]
+        g_cols = [string(t) for (i, t) in table.type_translations]
+        transform!(df, d_cols => ByRow((x, y) -> x:Day(1):y) => :date_range)
+        df = combine(groupby(df, g_cols), :date_range => merge_date_ranges => :date_range)
+        transform!(df, :date_range => ByRow(x -> (f=x[1], g=x[end])) => d_cols)
+        df = subset(
+            groupby(df, g_cols),
+            d_cols => (x, y) -> date_checks(x, y)
+        )
     end
     df[!, table.date_col_min] = Date.(df[:, table.date_col_min])
     df[!, table.date_col_max] = Date.(df[:, table.date_col_max])
