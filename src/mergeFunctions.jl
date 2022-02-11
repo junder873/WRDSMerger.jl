@@ -59,6 +59,11 @@ mutable struct LinkTable
     # as downloaded to the correct type
 end
 
+const LINKTABLE_CACHE = Dict{LinkTable, DataFrame}()
+
+Base.hash(x::LinkTable) = Base.hash("$(x.table) $(join(x.id_cols, ","))")
+Base.hash(x::LinkTable, h::UInt) = Base.hash("$(x.table) $(join(x.id_cols, ","))", h)
+Base.:(==)(x::LinkTable, y::LinkTable) = Base.hash(x) == Base.hash(y)
 
 LinkTable(::Type{Permno}, ::Type{T}) where {T<:CusipAll} = LinkTable(
     default_tables["crsp_stocknames"],
@@ -409,7 +414,8 @@ function link_identifiers(
     convert_to_values::Bool=true,
     validate::Bool=true,
     show_tree::Bool=false,
-    colnames::AbstractVector{<:Pair}=Pair{String, String}[]
+    colnames::AbstractVector{<:Pair}=Pair{String, String}[],
+    use_cache::Bool=true
 ) where {T<:FirmIdentifier}
     df = DataFrame(
         ids=cur_ids,
@@ -424,7 +430,14 @@ function link_identifiers(
     tables = LinkTable.(list) # get the list of tables, already in order
     list, tables = unique_tables(list, tables) # make the tables unique, prevents downloading unnecessary data
     for (l, table) in zip(list, tables)
-        new_table = link_table(conn, table, collect(skipmissing(df[:, string(l[1])])))
+        if use_cache && haskey(LINKTABLE_CACHE, table)
+            new_table = LINKTABLE_CACHE[table]
+        else
+            new_table = link_table(conn, table)
+            if use_cache
+                LINKTABLE_CACHE[table] = new_table
+            end
+        end
         if nrow(new_table) == 0
             continue
         end
