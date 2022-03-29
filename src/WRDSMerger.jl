@@ -33,23 +33,10 @@ export link_identifiers, Permno, Cusip, NCusip,
 export comp_data, crsp_data, crsp_market, crsp_stocknames,
     crsp_adjust, crsp_delist, list_libraries, list_tables,
     describe_table, get_table, raw_sql, ff_data
-    
-# types and functions for fast CAR calculations
-export TimelineData, FirmData, car, alpha, beta,
-    MarketData, get_firm_data, get_market_data,
-    get_firm_market_data, BasicReg, cache_reg,
-    bh_return, bhar, clear_firm_cached_data!,
-    firm_in_cache
 
 # extra utilities
 export range_join, BDay, Conditions
 
-# From Statistics
-export var, std
-
-# From StatsBase
-export coef, coefnames, responsename, nobs, dof_residual,
-    r2, adjr2, islinear, deviance, rss, predict
 
 ##############################################################################
 ##
@@ -62,11 +49,8 @@ include(joinpath("utils", "dateFunctions.jl"))
 include(joinpath("utils", "identifierTypes.jl"))
 include(joinpath("utils", "linkTree.jl"))
 include(joinpath("utils", "utils.jl"))
-include(joinpath("utils", "timelineDataCache.jl"))
-include(joinpath("utils", "fastRegression.jl"))
 
 include("crspFunctions.jl")
-include("calcFunctions.jl")
 include("compFunctions.jl")
 include("mergeFunctions.jl")
 include("exploreDB.jl")
