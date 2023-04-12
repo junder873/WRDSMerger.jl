@@ -53,20 +53,20 @@ function download_all_links(
         generate_option_crsp_links,
         generate_ravenpack_links
     ],
-    save_dfs=true,
-    linkdata = GENERAL_LINK_DATA
+    save_dfs=true
 )
     out_dfs = DataFrame[]
     for f in funs
-        df = f(db; linkdata)
+        df = f(db)
         if save_dfs
             push!(out_dfs, df)
         end
     end
+    create_all_links()
     if save_dfs
         out_dfs
     else
-        println("Downloaded $(length(funs)) files and saved to data")
+        println("Downloaded $(length(funs)) files and created relevant methods")
     end
 end
 

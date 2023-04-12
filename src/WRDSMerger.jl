@@ -22,14 +22,13 @@ using InteractiveUtils
 export Permno, Permco, Cusip, NCusip, Cusip6, NCusip6,
     GVKey, CIK, Ticker, IbesTicker, RPEntity, SecID,
     FirmIdentifier, SecurityIdentifier, AbstractIdentifier,
-    LinkPair, LinkSet, AllLinks, value,
+    LinkPair, AbstractLinkPair, create_all_links,
     generate_ibes_links, generate_crsp_links,
     generate_comp_cik_links, generate_option_crsp_links,
     generate_comp_crsp_links, generate_ravenpack_links,
     download_ibes_links, download_crsp_links,
     download_comp_cik_links, download_option_crsp_links,
-    download_comp_crsp_links, download_ravenpack_links,
-    GENERAL_LINK_DATA
+    download_comp_crsp_links, download_ravenpack_links
     
 
 # downloads and WRDS exploration functions
@@ -52,6 +51,7 @@ include(joinpath("links", "linkPairs.jl"))
 include(joinpath("links", "linkMethods.jl"))
 include(joinpath("links", "creatingLinks.jl"))
 include(joinpath("links", "downloadLinks.jl"))
+include(joinpath("links", "specialCases.jl"))
 
 include("utils.jl")
 
@@ -59,11 +59,6 @@ include("crspFunctions.jl")
 include("compFunctions.jl")
 include("exploreDB.jl")
 include("ffData.jl")
-
-const GENERAL_LINK_DATA = AllLinks(
-    Dict{Tuple{DataType, DataType}, LinkSet}(),
-    Dict{Tuple{DataType, DataType}, Vector{DataType}}()
-)
 
 global default_tables = Dict{String, String}(
     "comp_funda" => "compa.funda",

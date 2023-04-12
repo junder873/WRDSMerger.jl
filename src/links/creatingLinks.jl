@@ -43,7 +43,7 @@ function check_priority_errors(data::AbstractVector{T}) where {T}
     false
 end
 
-function LinkSet(data::Vector{L}) where {T1, T2, L<:LinkPair{T1, T2}}
+function Base.Dict(data::AbstractVector{L}) where {T1, T2, L<:AbstractLinkPair{T1, T2}}
     out = Dict{T1, Vector{L}}()
     sizehint!(out, length(data))
     for v in data
@@ -57,50 +57,50 @@ function LinkSet(data::Vector{L}) where {T1, T2, L<:LinkPair{T1, T2}}
         @warn("There are $(sum(temp)) cases of overlapping identifiers linking \
         $T1 -> $T2 that do not have a priority, links might be inconsistent")
     end
-    LinkSet(out)
+    out
 end
 ##
 
 function create_link_pair(
+    ::Type{LP},
     ::Type{T1},
     ::Type{T2},
     df::DataFrame,
     cols...
-) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier}
+) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier, LP<:AbstractLinkPair}
     df = select(df, cols...) |> unique
     cols1 = [cols...]
     cols2 = [cols[2], cols[1], cols[3:end]...]
     dropmissing!(df, [cols[1], cols[2]])
     df[!, cols[1]] = T1.(df[:, cols[1]])
     df[!, cols[2]] = T2.(df[:, cols[2]])
-    data1 = Vector{LinkPair{T1, T2}}(undef, nrow(df))
-    data2 = Vector{LinkPair{T2, T1}}(undef, nrow(df))
+    data1 = Vector{LP{T1, T2}}(undef, nrow(df))
+    data2 = Vector{LP{T2, T1}}(undef, nrow(df))
     for i in 1:nrow(df)
-        data1[i] = LinkPair(Tuple(df[i, cols1])...)
-        data2[i] = LinkPair(Tuple(df[i, cols2])...)
+        data1[i] = LP(Tuple(df[i, cols1])...)
+        data2[i] = LP(Tuple(df[i, cols2])...)
     end
     (
-        LinkSet(data1),
-        LinkSet(data2)
+        Dict(data1),
+        Dict(data2)
     )
 end
 
 function generate_ibes_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
-    linkdata = GENERAL_LINK_DATA,
     main_table=default_tables["wrdsapps_ibcrsphist"]
 )
     df = download_ibes_links(conn; main_table)
-    generate_ibes_links(df; linkdata)
+    generate_ibes_links(df)
 end
 function generate_ibes_links(
-    df_in::AbstractDataFrame;
-    linkdata = GENERAL_LINK_DATA
+    df_in::AbstractDataFrame
 )
     df = DataFrame(df_in)
     df = dropmissing(df, [:permno, :ncusip])
     df[!, :priority] = 1 ./ df[:, :score]
     temp = create_link_pair(
+        LinkPair,
         IbesTicker,
         Permno,
         df,
@@ -110,9 +110,10 @@ function generate_ibes_links(
         :edate,
         :priority
     )
-    update_links!(linkdata, temp[1])
-    update_links!(linkdata, temp[2])
+    new_link_method(temp[1])
+    new_link_method(temp[2])
     temp = create_link_pair(
+        LinkPair,
         IbesTicker,
         Cusip,
         df,
@@ -122,24 +123,22 @@ function generate_ibes_links(
         :edate,
         :priority
     )
-    update_links!(linkdata, temp[1])
-    update_links!(linkdata, temp[2])
+    new_link_method(temp[1])
+    new_link_method(temp[2])
     df_in
 end
 
 
 function generate_crsp_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
-    linkdata = GENERAL_LINK_DATA,
     main_table=default_tables["crsp_stocknames"],
     stockfile=default_tables["crsp_stock_data"]
 )
     df = download_crsp_links(conn; main_table, stockfile)
-    generate_crsp_links(df; linkdata)
+    generate_crsp_links(df)
 end 
 function generate_crsp_links(
-    df_in::AbstractDataFrame;
-    linkdata = GENERAL_LINK_DATA
+    df_in::AbstractDataFrame
 )
     df = DataFrame(df_in)
     df[!, :ncusip2] = df[:, :ncusip]
@@ -160,6 +159,7 @@ function generate_crsp_links(
             end
 
             temp = create_link_pair(
+                LinkPair,
                 v1[1],
                 v2[1],
                 df,
@@ -174,9 +174,9 @@ function generate_crsp_links(
                 || (v1[1] == Cusip && v2[1] == Cusip6)
             )# don't create links for NCusip -> NCusip6 or Cusip -> Cusip6
             # since there is a simpler definition
-                update_links!(linkdata, temp[1])
+                new_link_method(temp[1])
             end
-            update_links!(linkdata, temp[2])
+            new_link_method(temp[2])
         end
     end
     df_in
@@ -184,15 +184,13 @@ end
 
 function generate_comp_crsp_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
-    linkdata = GENERAL_LINK_DATA,
     main_table=default_tables["crsp_a_ccm_ccmxpf_lnkhist"]
 )
     df = download_comp_crsp_links(conn; main_table)
-    generate_comp_crsp_links(df; linkdata)
+    generate_comp_crsp_links(df)
 end
 function generate_comp_crsp_links(
-    df_in::AbstractDataFrame;
-    linkdata = GENERAL_LINK_DATA
+    df_in::AbstractDataFrame
 )
     df = DataFrame(df_in)
     for i in 1:nrow(df)
@@ -209,6 +207,7 @@ function generate_comp_crsp_links(
     ]
     for v in ids
         temp = create_link_pair(
+            LinkPair,
             GVKey,
             v[1],
             df,
@@ -219,34 +218,33 @@ function generate_comp_crsp_links(
             :linkprim,
             :linktype
         )
-        update_links!(linkdata, temp[1])
-        update_links!(linkdata, temp[2])
+        new_link_method(temp[1])
+        new_link_method(temp[2])
     end
     df_in
 end
 
 function generate_comp_cik_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
-    linkdata = GENERAL_LINK_DATA,
     main_table=default_tables["comp_company"]
 )
     df = download_comp_cik_links(conn; main_table)
-    generate_comp_cik_links(df; linkdata)
+    generate_comp_cik_links(df)
 end
 function generate_comp_cik_links(
-    df_in::AbstractDataFrame;
-    linkdata = GENERAL_LINK_DATA
+    df_in::AbstractDataFrame
 )
     df = DataFrame(df_in)
     temp = create_link_pair(
+        LinkPair,
         GVKey,
         CIK,
         df,
         :gvkey,
         :cik
     )
-    update_links!(linkdata, temp[1])
-    update_links!(linkdata, temp[2])
+    new_link_method(temp[1])
+    new_link_method(temp[2])
     df_in
 end
 
@@ -260,15 +258,13 @@ end
 
 function generate_option_crsp_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
-    linkdata = GENERAL_LINK_DATA,
     main_table=default_tables["optionm_all_secnmd"]
 )
     df = download_option_crsp_links(conn; main_table)
-    generate_option_crsp_links(df; linkdata)
+    generate_option_crsp_links(df)
 end
 function generate_option_crsp_links(
-    df_in::AbstractDataFrame;
-    linkdata = GENERAL_LINK_DATA
+    df_in::AbstractDataFrame
 )
     df = DataFrame(df_in)
     for i in 1:nrow(df)
@@ -281,6 +277,7 @@ function generate_option_crsp_links(
     sort!(df, [:secid, :effect_date])
     df = transform(groupby(df, :secid), :effect_date => prev_value => :end_date)
     temp = create_link_pair(
+        LinkPair,
         SecID,
         NCusip,
         df,
@@ -289,8 +286,8 @@ function generate_option_crsp_links(
         :effect_date,
         :end_date
     )
-    update_links!(linkdata, temp[1])
-    update_links!(linkdata, temp[2])
+    new_link_method(temp[1])
+    new_link_method(temp[2])
     df_in
 end
 
@@ -308,21 +305,20 @@ end
 
 function generate_ravenpack_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
-    linkdata = GENERAL_LINK_DATA,
     main_table=default_tables["ravenpack_common_rp_entity_mapping"]
 )
     df = download_ravenpack_links(conn; main_table)
-    generate_ravenpack_links(df; linkdata)
+    generate_ravenpack_links(df)
 end
 function generate_ravenpack_links(
-    df_in::AbstractDataFrame;
-    linkdata = GENERAL_LINK_DATA
+    df_in::AbstractDataFrame
 )
     df = DataFrame(df_in)
     df = sort(df, [:rp_entity_id, :range_start])
     df[!, :range_start] = Date.(df[:, :range_start])
     df = transform(groupby(df, :rp_entity_id), [:range_start, :range_end] => (x, y) -> adjust_next_day(x, y) => :range_end)
     temp = create_link_pair(
+        LinkPair,
         RPEntity,
         NCusip6,
         df,
@@ -331,7 +327,15 @@ function generate_ravenpack_links(
         :range_start,
         :range_end
     )
-    update_links!(linkdata, temp[1])
-    update_links!(linkdata, temp[2])
+    new_link_method(temp[1])
+    new_link_method(temp[2])
     df_in
+end
+
+function create_all_links()
+    needed_links=all_pairs(AbstractIdentifier, AbstractIdentifier; test_fun=method_is_missing)
+    base_links=all_pairs(AbstractIdentifier, AbstractIdentifier)
+    for l in needed_links
+        new_link_method(l...; current_links=base_links)
+    end
 end

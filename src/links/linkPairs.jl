@@ -47,8 +47,8 @@ end
 These are defined as a single direction link (T1 -> T2) that is valid between
 a specific date range (inclusive) and has a given priority (higher is better).
 Priority is useful if there are overlapping T1 -> T2 items. For example, a
-[`FirmIdentifer`](@ref) likely has multiple [`SecurityIdentifer`](@ref)s
-that relate to it. One common way to pick between different `SecurityIdentifer`s
+[`FirmIdentifier`](@ref) likely has multiple [`SecurityIdentifier`](@ref)s
+that relate to it. One common way to pick between different `SecurityIdentifier`s
 is to pick the one with the large market cap as the primary.
 
 If defining a new identifier that has other methods of choosing priorities
@@ -88,22 +88,12 @@ struct LinkPair{T1<:AbstractIdentifier, T2<:AbstractIdentifier} <: AbstractLinkP
 end
 
 
-function Base.isless(data1::LinkPair{T1, T2}, data2::LinkPair{T1, T2}) where {T1, T2}
-    data1.priority < data2.priority
-end
-
 
 # GVKey is only ever linked to one CIK
 Base.isless(data1::LinkPair{T1, T2}, data2::LinkPair{T1, T2}) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = false
 Base.in(dt::Date, link::LinkPair{T1, T2}) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = true
 #Base.in(dt::Date, link::LinkPair{T1, T2}) where {T1<:Union{NCusip, RPEntity}, T2<:Union{NCusip, RPEntity}} = min_date(link) <= dt <= max_date(link)
 
-# function LinkPair(
-#     t1::T1,
-#     t2::T2,
-# ) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}}
-#     return LinkPair{T1, T2}(t1, t2, Date(0, 1, 1), Date(9999, 12, 31), 0.0)
-# end
 
 function LinkPair(
     t1::T1,
