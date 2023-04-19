@@ -333,9 +333,9 @@ struct Cusip <: SecurityIdentifier
             error("Too many characters for Cusip")
         end
         if length(s) == 9 && luhn_checksum(s[1:8]) != parse(Int, s[9])
-            @warn("Invalid Checksum in parsing Cusip, this observation\
-            might not match other Cusips. To correct this error, pass\
-            the first 8 characters of the string instead.")
+            @warn("Invalid Checksum in parsing Cusip, this observation" *
+            "might not match other Cusips. To correct this error, pass" *
+            "the first 8 characters of the string instead.")
         end
         new(s[1:8])
     end
@@ -434,9 +434,9 @@ struct NCusip <: SecurityIdentifier
             error("Too many characters for NCusip")
         end
         if length(s) == 9 && luhn_checksum(s[1:8]) != parse(Int, s[9])
-            @warn("Invalid Checksum in parsing NCusip, this observation\
-            might not match other NCusips. To correct this error, pass\
-            the first 8 characters of the string instead.")
+            @warn("Invalid Checksum in parsing NCusip, this observation" *
+            "might not match other NCusips. To correct this error, pass" *
+            "the first 8 characters of the string instead.")
         end
         new(s[1:8])
     end

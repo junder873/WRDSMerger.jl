@@ -43,8 +43,8 @@ would call `convert_identifier(Permno, SecID(1), today())`.
 function convert_identifier(::Type{ID}, x::T1, dt::Date; vargs...) where {ID<:AbstractIdentifier, T1<:AbstractIdentifier}
     throw(
         MethodError,
-        "No Method currently links $T1 -> $ID. Make sure the proper data\
-        is loaded and run `create_all_links()` to create the necessary methods."
+        "No Method currently links $T1 -> $ID. Make sure the proper data" *
+        "is loaded and run `create_all_links()` to create the necessary methods."
     )
 end
 

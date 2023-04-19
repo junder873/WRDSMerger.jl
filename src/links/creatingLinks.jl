@@ -72,8 +72,8 @@ function Base.Dict(data::AbstractVector{L}) where {T1, T2, L<:AbstractLinkPair{T
     end
     temp = check_priority_errors.(values(out))
     if any(temp)
-        @warn("There are $(sum(temp)) cases of overlapping identifiers linking \
-        $T1 -> $T2 that do not have a priority, links might be inconsistent")
+        @warn("There are $(sum(temp)) cases of overlapping identifiers linking" *
+        "$T1 -> $T2 that do not have a priority, links might be inconsistent")
     end
     out
 end
