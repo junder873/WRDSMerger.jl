@@ -1,4 +1,45 @@
 
+"""
+    convert_identifier(::Type{ID}, x::T1, dt::Date; vargs...) where {ID<:AbstractIdentifier, T1<:AbstractIdentifier}
+
+    convert_identifier(
+        ::Type{ID},
+        x::T1,
+        dt::Date,
+        data::Dict{T1, Vector{<:AbstractLinkPair{T1, ID}}}=data;
+        vargs...
+    ) where {ID<:AbstractIdentifier, T1<:AbstractIdentifier}
+
+Converts an identifier (T1) to a different identifier (ID). In its most generic
+form, this throws a `MethodError` implying there is not a function that exists
+to directly link T1 -> ID.
+
+Calling [`new_link_method`](@ref) calls a macro to
+create different versions of `convert_identifier` to provide links
+between identifiers. If these are direct links (which means there is a 
+`AbstractLinkPair` that links the two identifiers, such as Permno -> Permco
+or Permno -> NCusip), then this provides a one step method to link these
+two identifiers.
+
+For other identifiers, there is not a link table that
+provides a direct link (such as SecID -> GVKey). In those cases,
+`new_link_method` will find a path between the two (in the case of SecID -> GVKey,
+SecID -> NCusip -> Permno -> GVKey). Each case of `convert_identifier` only
+does 1 step in the process, so `convert_identifier(GVKey, SecID(1), today())`
+would call `convert_identifier(Permno, SecID(1), today())`.
+
+!!! note
+    There are two slightly different behaviors for the direct links of
+    `convert_identifier`. When linking a `SecurityIdentifier` -> `FirmIdentifier`,
+    the function might retry if a link is not found with the parent identifier
+    of the security. For example, when trying to link NCusip -> GVKey, the
+    default behavior is to try NCusip -> Permno -> GVKey. However, suppose
+    there is not a matching NCusip -> Permno, the function will try again
+    with NCusip6 -> Permno. The logic is that it should not matter if
+    the Permno does not perfectly match the NCusip if the end goal is 
+    to find a relevant GVKey. This behavior can be disabled by using
+    `allow_parent_firm=false`.
+"""
 function convert_identifier(::Type{ID}, x::T1, dt::Date; vargs...) where {ID<:AbstractIdentifier, T1<:AbstractIdentifier}
     throw(
         MethodError,
@@ -11,6 +52,30 @@ function convert_identifier(::Type{ID}, ::Missing, dt::Date; vargs...) where {ID
     missing
 end
 
+
+"""
+    new_link_method(data::Vector{L}) where {L<:AbstractLinkPair}
+
+    new_link_method(data::Dict{T1, Vector{L}}) where {T1, ID, L<:AbstractLinkPair{T1, ID}}
+
+    function new_link_method(
+        ::Type{T1},
+        ::Type{ID};
+        current_links = all_pairs(AbstractIdentifier, AbstractIdentifier)
+    ) where {ID<:AbstractIdentifier, T1<:AbstractIdentifier}
+
+Creates a new [`convert_identifier`](@ref) method to link T1 -> ID. See detailed
+notes under `convert_identifier`. If a vector of `AbstractLinkPair` or a dictionary
+is passed, this creates a direct link method, while passing two types
+will attempt to find a path between the two identifiers and define the appropriate
+function.
+
+!!! note
+    [`all_pairs`](@ref) is a relatively slow function, needing to repeatedly
+    check what methods are available. Therefore, if needing to create many new
+    methods, it is best to run `all_pairs` once and pass that for each new
+    T1 -> ID that needs to be created.
+"""
 function new_link_method(data::Vector{L}) where {L<:AbstractLinkPair}
     new_link_method(Dict(data))
 end
@@ -156,15 +221,31 @@ function get_steps(
 end
 
 has_parent(::Type{<:AbstractIdentifier}) = false
-has_parent(::Type{Permno}) = true
 has_parent(::Type{Cusip}) = true
 has_parent(::Type{NCusip}) = true
-parent_type(::Type{Permno}) = Permco
 parent_type(::Type{Cusip}) = Cusip6
 parent_type(::Type{NCusip}) = NCusip6
 
-
+function all_same_child(data::AbstractVector{L}) where {L<:AbstractLinkPair}
+    if length(data) == 1
+        return true
+    end
+    val1 = childID(data[1])
+    for v in childID.(data[2:end])
+        if val1 != v
+            return false
+        end
+    end
+    true
+end
 """
+    function choose_best_match(
+        data::AbstractVector{L},
+        dt::Date;
+        allow_inexact_date=true,
+        args...
+    ) where {L<:AbstractLinkPair}
+
 Picks the best identifier based on the vector of links provided.
 
 ## Args
@@ -181,7 +262,7 @@ function choose_best_match(
     dt::Date;
     allow_inexact_date=true,
     args...
-)::Union{T2, Missing} where {T1, T2, L<:AbstractLinkPair{T1, T2}}
+) where {L<:AbstractLinkPair}
     best = 0
     for (i, v) in enumerate(data)
         if dt in v
@@ -193,7 +274,8 @@ function choose_best_match(
     end
     if best != 0
         childID(data[best])
-    elseif allow_inexact_date && length(data) == 1 # no matches with date, but there is only one link
+    elseif allow_inexact_date && (all_same_child(data))
+        # no matches with date, but there is only one link
         childID(data[1])
     else
         missing

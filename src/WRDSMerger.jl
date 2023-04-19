@@ -25,11 +25,7 @@ export Permno, Permco, Cusip, NCusip, Cusip6, NCusip6,
     LinkPair, AbstractLinkPair, create_all_links,
     generate_ibes_links, generate_crsp_links,
     generate_comp_cik_links, generate_option_crsp_links,
-    generate_comp_crsp_links, generate_ravenpack_links,
-    download_ibes_links, download_crsp_links,
-    download_comp_cik_links, download_option_crsp_links,
-    download_comp_crsp_links, download_ravenpack_links
-    
+    generate_comp_crsp_links, generate_ravenpack_links
 
 # downloads and WRDS exploration functions
 export comp_data, crsp_data, crsp_market, crsp_stocknames,

@@ -66,8 +66,8 @@ struct LinkPair{T1<:AbstractIdentifier, T2<:AbstractIdentifier} <: AbstractLinkP
     function LinkPair(
         t1::T1,
         t2::T2,
-        dt1::Union{Missing, Date, String}=Date(0, 1, 1),
-        dt2::Union{Missing, Date, String}=Date(9999, 12, 31),
+        dt1::Union{Missing, Date, AbstractString}=Date(0, 1, 1),
+        dt2::Union{Missing, Date, AbstractString}=Date(9999, 12, 31),
         priority::Real=0.0
     ) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier}
         if ismissing(dt1)
@@ -98,10 +98,10 @@ Base.in(dt::Date, link::LinkPair{T1, T2}) where {T1<:Union{GVKey, CIK}, T2<:Unio
 function LinkPair(
     t1::T1,
     t2::T2,
-    dt1::Union{Missing, Date, String},
-    dt2::Union{Missing, Date, String},
-    linkprim::String,
-    linktype::String,
+    dt1::Union{Missing, Date, AbstractString},
+    dt2::Union{Missing, Date, AbstractString},
+    linkprim::AbstractString,
+    linktype::AbstractString,
 ) where {T1<:GVKey, T2<:Union{Permno, Permco}}
     priority = 0.0
     if linkprim == "P"
@@ -134,10 +134,10 @@ end
 function LinkPair(
     t1::T1,
     t2::T2,
-    dt1::Union{Missing, Date, String},
-    dt2::Union{Missing, Date, String},
-    linkprim::String,
-    linktype::String,
+    dt1::Union{Missing, Date, AbstractString},
+    dt2::Union{Missing, Date, AbstractString},
+    linkprim::AbstractString,
+    linktype::AbstractString,
 ) where {T1<:Union{Permno, Permco}, T2<:GVKey}
     priority = 0.0
     if linkprim == "P"

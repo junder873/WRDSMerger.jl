@@ -1,5 +1,6 @@
 # WRDSMerger.jl Docs
 
+
 # Installation
 From the Julia REPL:
 ```julia
@@ -49,44 +50,9 @@ WRDSMerger.default_tables["comp_fundq"] = "compa_fundq"
 
 ## ODBC vs LibPQ
 
-The two largest packages I am aware of for connecting to a Postgres database in Lulia are [ODBC.jl](https://github.com/JuliaDatabases/ODBC.jl) and [LibPQ.jl](https://github.com/invenia/LibPQ.jl). Both of these have various advantages.
+The two largest packages I am aware of for connecting to a Postgres database in Julia are [ODBC.jl](https://github.com/JuliaDatabases/ODBC.jl) and [LibPQ.jl](https://github.com/invenia/LibPQ.jl). Both of these have various advantages.
 
 Starting with LibPQ, adding LibPQ to your project is the full installation process. To use ODBC, an extra driver, with extra setup, needs to occur before use. In addition, as far as I can tell, LibPQ does not have a limit on length of query. Some functions in this package (such as `crsp_data`) create exceptionally long queries to reduce the total amount of data downloaded, which LibPQ handles easily.
 
 For ODBC, it is considerably faster at converting data to a DataFrame. For example, downloading the full CRSP Stockfile (`crsp.dsf`, which includes returns for every stock for each day and is about 100 million rows), takes about 4 minutes to download and make into a DataFrame with ODBC on a gigabit connection. LibPQ takes about 24 minutes. Most of this difference appears to be type instability while converting the LibPQ result to a DataFrame, since the initial LibPQ result only takes a minute and `@time` reports 80% garbage collection time. ODBC also stores your password separately (in the driver settings) making it a little easier to share a project without compromising your password.
 
-# Explore WRDS
-```@docs
-list_libraries
-list_tables
-describe_table
-get_table
-raw_sql
-```
-
-
-# Compustat
-```@docs
-comp_data
-```
-
-# CRSP
-```@docs
-crsp_stocknames
-crsp_market
-crsp_data
-crsp_delist
-crsp_adjust
-```
-
-# Merge
-```@docs
-link_identifiers
-```
-
-# Utilities
-```@docs
-range_join
-check_schema_perms
-approx_row_count
-```

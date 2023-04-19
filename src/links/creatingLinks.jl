@@ -1,11 +1,15 @@
 
+"""
+This function looks for overlapping periods. It takes a list of all dates
+and checks if individual sub periods are a subset of multiple periods.
+"""
 function identify_overlaps(dts1::AbstractVector, dts2::AbstractVector)
     out = Set{Date}()
     cur_dates = sort(vcat(dts1, dts2))
     for i in 1:length(cur_dates)-1
         c = 0
         for j in eachindex(dts1, dts2)
-            if cur_dates[i] >= dts1[j] && cur_dates[i+1] <= dts2[j]#test ⊆ d
+            if cur_dates[i] >= dts1[j] && cur_dates[i+1] <= dts2[j]
                 c += 1
             end
         end
@@ -17,7 +21,14 @@ function identify_overlaps(dts1::AbstractVector, dts2::AbstractVector)
     out
 end
 
-function check_priority_errors(data::AbstractVector{T}) where {T}
+"""
+This function tests whether there are any dates that are in multiple
+`AbstractLinkPair`s and those links have equivalent priority. If this function
+returns `true`, then there is at least a date where there is no distinction
+between two links. The way [`choose_best_match`](@ref) works, the first in
+the vector will be chosen.
+"""
+function check_priority_errors(data::AbstractVector{T}) where {T<:AbstractLinkPair}
     if length(data) == 1
         return false
     end
@@ -43,6 +54,13 @@ function check_priority_errors(data::AbstractVector{T}) where {T}
     false
 end
 
+"""
+    Dict(data::AbstractVector{L}) where {T1, T2, L<:AbstractLinkPair{T1, T2}}
+
+Converts a vector of `AbstractLinkPair`s to a dictionary where each T1 is a key
+in the dictionary and the values are vectors of L. It also checks whether those
+vectors ever have overlapping inconsistent priorities.
+"""
 function Base.Dict(data::AbstractVector{L}) where {T1, T2, L<:AbstractLinkPair{T1, T2}}
     out = Dict{T1, Vector{L}}()
     sizehint!(out, length(data))
@@ -59,8 +77,23 @@ function Base.Dict(data::AbstractVector{L}) where {T1, T2, L<:AbstractLinkPair{T
     end
     out
 end
-##
 
+"""
+    function create_link_pair(
+        ::Type{LP},
+        ::Type{T1},
+        ::Type{T2},
+        df::DataFrame,
+        cols...
+    ) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier, LP<:AbstractLinkPair}
+
+Generic function that creates an AbstractLinkPair based on the types
+and a DataFrame. `cols...` should be a list of column names in the DataFrame,
+the first being ready to convert to type T1 and the second ready to convert
+to type T2. This function returns a tuple of two dictionaries:
+`(Dict{T1, LP{T1, T2}},Dict{T2, LP{T2, T1}})`
+which is easily passed to [`new_link_method`](@ref).
+"""
 function create_link_pair(
     ::Type{LP},
     ::Type{T1},
@@ -74,18 +107,26 @@ function create_link_pair(
     dropmissing!(df, [cols[1], cols[2]])
     df[!, cols[1]] = T1.(df[:, cols[1]])
     df[!, cols[2]] = T2.(df[:, cols[2]])
-    data1 = Vector{LP{T1, T2}}(undef, nrow(df))
-    data2 = Vector{LP{T2, T1}}(undef, nrow(df))
-    for i in 1:nrow(df)
-        data1[i] = LP(Tuple(df[i, cols1])...)
-        data2[i] = LP(Tuple(df[i, cols2])...)
-    end
+    data1 = [LP(x...) for x in Tuple(eachrow(df[:, cols1]))]
+    data2 = [LP(x...) for x in Tuple(eachrow(df[:, cols2]))]
     (
         Dict(data1),
         Dict(data2)
     )
 end
 
+"""
+    generate_ibes_links(
+        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        main_table=default_tables["wrdsapps_ibcrsphist"]
+    )
+
+    generate_ibes_links(df::AbstractDataFrame)
+
+Generates the methods between IbesTicker and Permno/NCusip based on a standard
+WRDS file. If a database connection is provided, then it will download
+the table, otherwise, it can use a provided DataFrame.
+"""
 function generate_ibes_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
     main_table=default_tables["wrdsapps_ibcrsphist"]
@@ -128,7 +169,26 @@ function generate_ibes_links(
     df_in
 end
 
+"""
+    generate_crsp_links(
+        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        main_table=default_tables["crsp_stocknames"],
+        stockfile=default_tables["crsp_stock_data"]
+    )
 
+    generate_crsp_links(df::AbstractDataFrame)
+
+Generates the methods linking 
+Permno, Permco, Cusip, NCusip, Cusip6, NCusip6 and Ticker to each other.
+If a database connection is provided, then it will download
+the table, otherwise, it can use a provided DataFrame.
+
+The file used (`crsp.stocknames`), does not have a clear way to differentiate
+different priorities. The most common way is to calculate the market cap
+of any conflicting securities to determine the best option. The ideal is the
+market cap on the relevant day, but since this needs a static value, the
+default download is to average the market cap over the relevant period.
+"""
 function generate_crsp_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
     main_table=default_tables["crsp_stocknames"],
@@ -138,7 +198,8 @@ function generate_crsp_links(
     generate_crsp_links(df)
 end 
 function generate_crsp_links(
-    df_in::AbstractDataFrame
+    df_in::AbstractDataFrame;
+    priority_col=:mkt_cap
 )
     df = DataFrame(df_in)
     df[!, :ncusip2] = df[:, :ncusip]
@@ -167,7 +228,7 @@ function generate_crsp_links(
                 v2[2],
                 :namedt,
                 :nameenddt,
-                :mkt_cap
+                priority_col
             )
             if !(
                 (v1[1] == NCusip && v2[1] == NCusip6)
@@ -182,6 +243,20 @@ function generate_crsp_links(
     df_in
 end
 
+"""
+    generate_comp_crsp_links(
+        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        main_table=default_tables["crsp_a_ccm_ccmxpf_lnkhist"]
+    )
+
+    generate_comp_crsp_links(df::AbstractDataFrame)
+
+Generates the methods linking GVKey and Permno/Permco based on 
+the CRSP/Compustat merged annual file link history
+(`crsp_a_ccm.ccmxpf_lnkhist`).
+If a database connection is provided, then it will download
+the table, otherwise, it can use a provided DataFrame.
+"""
 function generate_comp_crsp_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
     main_table=default_tables["crsp_a_ccm_ccmxpf_lnkhist"]
@@ -197,6 +272,7 @@ function generate_comp_crsp_links(
         # the notes specifically point out that if the linktype is
         # "LS", then the gvkey - permco link is not valid, so this
         # specifies that
+        allowmissing!(df, :lpermco)
         if df[i, :linktype] == "LS"
             df[i, :lpermco] = missing
         end
@@ -224,6 +300,20 @@ function generate_comp_crsp_links(
     df_in
 end
 
+"""
+    generate_comp_cik_links(
+        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        main_table=default_tables["comp_company"]
+    )
+
+    generate_comp_cik_links(df::AbstractDataFrame)
+
+Generates the methods linking GVKey and CIK based on 
+the Compustat company name file (`comp.company`). GVKey and CIK do not have
+any date conditions, so this download is relatively simple.
+If a database connection is provided, then it will download
+the table, otherwise, it can use a provided DataFrame.
+"""
 function generate_comp_cik_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
     main_table=default_tables["comp_company"]
@@ -256,6 +346,21 @@ function prev_value(x::AbstractVector{T}) where {T}
     out
 end
 
+"""
+    generate_option_crsp_links(
+        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        main_table=default_tables["optionm_all_secnmd"]
+    )
+
+    generate_option_crsp_links(df::AbstractDataFrame)
+
+Generates the methods linking SecID and NCusip based on 
+the option names file (`optionm_all.secnmd`). This file only provides an
+"effective date", so it is assumed that once the next "effective date" 
+occurs, the link is no longer valid.
+If a database connection is provided, then it will download
+the table, otherwise, it can use a provided DataFrame.
+"""
 function generate_option_crsp_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
     main_table=default_tables["optionm_all_secnmd"]
@@ -294,15 +399,33 @@ end
 
 function adjust_next_day(s, e)
     for i in 1:length(e)-1
-        if e[i] |> ismissing
-            e[i] = s[i+1] - Day(1)
-        elseif s[i+1] == e[i]
+        # if e[i] |> ismissing
+        #     e[i] = s[i+1] - Day(1)
+        if !ismissing(e[i]) && s[i+1] == e[i]
             e[i] = e[i] - Day(1)
         end
     end
     e
 end
 
+"""
+    generate_ravenpack_links(
+        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        main_table=default_tables["ravenpack_common_rp_entity_mapping"]
+    )
+
+    generate_ravenpack_links(df::AbstractDataFrame)
+
+Generates the methods linking RPEntity and NCusip6 based on 
+the RavenPack Entity Mapping file (`ravenpack_common.rp_entity_mapping`).
+This file is very messy, so the automatic options make several assumptions
+and filters. First, when downloading the data, it filters any NCusip in the
+RavenPack file that is not in the `crsp.stocknames` file. Second, for each
+RPEntity, if the end date is missing, it assumes the next start date is
+the appropriate end date for the link.
+If a database connection is provided, then it will download
+the table, otherwise, it can use a provided DataFrame.
+"""
 function generate_ravenpack_links(
     conn::Union{LibPQ.Connection, DBInterface.Connection};
     main_table=default_tables["ravenpack_common_rp_entity_mapping"]
