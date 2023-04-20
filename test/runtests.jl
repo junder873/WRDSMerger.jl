@@ -205,6 +205,8 @@ for (file, fun) in zip(files, funs)
 end
 create_all_links()
 
+# Testing creating types is done with doctest
+
 @test isa(Permno(47896), Permno)
 @test Permno(Permco(20436), Date(2020)) == 47896
 @test isa(WRDSMerger.convert_identifier(Permno, Permco(20436), Date(2020)), Permno)
@@ -216,7 +218,19 @@ create_all_links()
 
 @test Permno(NCusip("16161A10"), Date(2020)) == 47896
 @test Permno(NCusip("16161A10"), Date(2020); allow_inexact_date=false) |> ismissing
+
+# non direct links
+@test CIK(IbesTicker("CHL"), Date(2020)) == "0000019617"
+@test IbesTicker(CIK("0000019617"), Date(2020)) == "CHL"
+@test SecID(CIK("0000019617"), Date(2020)) == 102936
+@test CIK(SecID(102936), Date(2020)) == "0000019617"
+@test CIK(NCusip("46625H21"), Date(2020)) == "0000019617"
+@test CIK(NCusip("46625H21"), Date(2020); allow_parent_firm=false) |> ismissing
+@test CIK(NCusip("16161A10"), Date(2020)) == "0000019617"
+@test CIK(NCusip("16161A10"), Date(2020); allow_inexact_date=false) |> ismissing
 ##
+
+# Since the data is already loaded, just need to load the necessary packages
 DocMeta.setdocmeta!(
     WRDSMerger,
     :DocTestSetup,
