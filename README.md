@@ -1,4 +1,4 @@
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://docs.juliahub.com/WRDSMerger/)
+[![Dev](https://img.shields.io/badge/docs-stable-blue.svg)](https://junder873.github.io/WRDSMerger.jl/dev/)
 [![Build status](https://github.com/junder873/WRDSMerger.jl/workflows/CI/badge.svg)](https://github.com/junder873/WRDSMerger.jl/actions)
 
 # WRDSMerger.jl
