@@ -7,16 +7,10 @@ module WRDSMerger
 ##############################################################################
 using DataFrames
 using Dates
-using BusinessDays
 using Statistics
 using LibPQ
 using DBInterface
-using AbstractTrees
-using ShiftedArrays: lead
 using InteractiveUtils
-using StatsBase
-using Statistics
-using LinearAlgebra
 
 ##############################################################################
 ##
@@ -25,9 +19,13 @@ using LinearAlgebra
 ##############################################################################
 
 # identifiers and linking items
-export link_identifiers, Permno, Cusip, NCusip,
-    GVKey, CIK, Ticker, IbesTicker, LinkTable,
-    link_table
+export Permno, Permco, Cusip, NCusip, Cusip6, NCusip6,
+    GVKey, CIK, Ticker, IbesTicker, RPEntity, SecID,
+    FirmIdentifier, SecurityIdentifier, AbstractIdentifier,
+    LinkPair, AbstractLinkPair, create_all_links,
+    generate_ibes_links, generate_crsp_links,
+    generate_comp_cik_links, generate_option_crsp_links,
+    generate_comp_crsp_links, generate_ravenpack_links
 
 # downloads and WRDS exploration functions
 export comp_data, crsp_data, crsp_market, crsp_stocknames,
@@ -35,7 +33,7 @@ export comp_data, crsp_data, crsp_market, crsp_stocknames,
     describe_table, get_table, raw_sql, ff_data
 
 # extra utilities
-export range_join, BDay, Conditions
+export range_join, Conditions
 
 
 ##############################################################################
@@ -44,15 +42,17 @@ export range_join, BDay, Conditions
 ##
 ##############################################################################
 
+include(joinpath("links", "identifierTypes.jl"))
+include(joinpath("links", "linkPairs.jl"))
+include(joinpath("links", "linkMethods.jl"))
+include(joinpath("links", "creatingLinks.jl"))
+include(joinpath("links", "downloadLinks.jl"))
+include(joinpath("links", "specialCases.jl"))
+
 include("utils.jl")
-include(joinpath("utils", "dateFunctions.jl"))
-include(joinpath("utils", "identifierTypes.jl"))
-include(joinpath("utils", "linkTree.jl"))
-include(joinpath("utils", "utils.jl"))
 
 include("crspFunctions.jl")
 include("compFunctions.jl")
-include("mergeFunctions.jl")
 include("exploreDB.jl")
 include("ffData.jl")
 
@@ -67,6 +67,8 @@ global default_tables = Dict{String, String}(
     "wrdsapps_ibcrsphist" => "wrdsapps.ibcrsphist",
     "comp_company" => "comp.company",
     "ff_factors" => "ff.factors_daily",
+    "optionm_all_secnmd" => "optionm_all.secnmd",
+    "ravenpack_common_rp_entity_mapping" => "ravenpack_common.rp_entity_mapping"
 )
 
 end 

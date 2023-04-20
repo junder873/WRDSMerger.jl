@@ -1,4 +1,4 @@
-using SQLite, DataFrames, Dates, Test, CSV
+using SQLite, DataFrames, Dates, Test, CSV, Documenter
 using WRDSMerger
 
 ##
@@ -179,37 +179,68 @@ println(size(df))
 
 ##
 
-df = link_identifiers(db, [Permno(10104)], [Date(2020)], Cusip, NCusip, GVKey, Ticker, IbesTicker, show_tree=true, colnames=["Cusip" => "cusip", "CIK" => "cik"])
-println(size(df))
-println(df)
-@test nrow(df) > 0
+data_dir = joinpath("data")
+files = [
+    "crsp_links",
+    "crsp_comp_links",
+    "gvkey_cik_links",
+    "ibes_links",
+    "option_links",
+    "ravenpack_links"
+]
+funs=[
+    generate_crsp_links,
+    generate_comp_crsp_links,
+    generate_comp_cik_links,
+    generate_ibes_links,
+    generate_option_crsp_links,
+    generate_ravenpack_links
+]
+for (file, fun) in zip(files, funs)
+    fun(
+        DataFrame(
+            CSV.File(joinpath(data_dir, file * ".csv"))
+        )
+    )
+end
+create_all_links()
 
-df = link_identifiers(db,  [GVKey(12142), GVKey("012142")], [Date(2020), Date(2020)], Permno, Cusip, NCusip, GVKey, Ticker, IbesTicker)
-println(size(df))
-println(df)
-@test nrow(df) > 0
+# Testing creating types is done with doctest
 
+@test isa(Permno(47896), Permno)
+@test Permno(Permco(20436), Date(2020)) == 47896
+@test isa(WRDSMerger.convert_identifier(Permno, Permco(20436), Date(2020)), Permno)
+@test ismissing(Permno(NCusip("46625H21"), Date(2020)))
+@test Permco(NCusip("46625H21"), Date(2020)) == 20436
+@test Permco(NCusip6("46625H"), Date(2020)) == 20436
+@test Permno(NCusip("46625H21"), Date(2020); allow_parent_firm=true) == 47896
+@test Permco(NCusip("46625H21"), Date(2020); allow_parent_firm=false) |> ismissing
 
-df = link_identifiers(db,  [CIK(1341439), CIK("0001341439")], [Date(2020), Date(2020)], IbesTicker)
-println(size(df))
-println(df)
-@test nrow(df) > 0
+@test Permno(NCusip("16161A10"), Date(2020)) == 47896
+@test Permno(NCusip("16161A10"), Date(2020); allow_inexact_date=false) |> ismissing
 
-df = link_identifiers(db,  [Ticker("ORCL")], [Date(2020)], Permno, Cusip, NCusip, GVKey, Ticker, IbesTicker)
-println(size(df))
-println(df)
-@test nrow(df) > 0
+# non direct links
+@test CIK(IbesTicker("CHL"), Date(2020)) == "0000019617"
+@test IbesTicker(CIK("0000019617"), Date(2020)) == "CHL"
+@test SecID(CIK("0000019617"), Date(2020)) == 102936
+@test CIK(SecID(102936), Date(2020)) == "0000019617"
+@test CIK(NCusip("46625H21"), Date(2020)) == "0000019617"
+@test CIK(NCusip("46625H21"), Date(2020); allow_parent_firm=false) |> ismissing
+@test CIK(NCusip("16161A10"), Date(2020)) == "0000019617"
+@test CIK(NCusip("16161A10"), Date(2020); allow_inexact_date=false) |> ismissing
+##
 
-df = link_identifiers(db,  [IbesTicker("ORCL")], [Date(2020)], Permno, Cusip, NCusip, GVKey, Ticker, IbesTicker)
-println(size(df))
-println(df)
-@test nrow(df) > 0
+# Since the data is already loaded, just need to load the necessary packages
+DocMeta.setdocmeta!(
+    WRDSMerger,
+    :DocTestSetup,
+    quote
+        using WRDSMerger, Dates
+    end;
+    recursive=true
+)
 
-df = link_identifiers(db, IbesTicker.(["ORCL", "ETN", "ETN"]), [Date(2020), Date(2020), Date(2010)], NCusip, Cusip)
-println(size(df))
-println(df)
-@test nrow(df) == 3
-
+doctest(WRDSMerger)
 ##
 
 df1 = DataFrame(

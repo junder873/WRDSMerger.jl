@@ -230,10 +230,8 @@ function filter_data(
     return fil
 end
 
-"""
-I need the keymap returned instead of the full
-SubDataFrame
-"""
+# I need the keymap returned instead of the full
+# SubDataFrame
 function special_get(gdf, key)
     if haskey(gdf.keymap, key)
         x = gdf.keymap[key]
@@ -501,156 +499,24 @@ function parse_ons(on)
     return on1, on2
 end
 
-# I wrote this macro a while ago, do not know if it currently works
-# function parse_expression(
-#     expression::Expr
-# )
-#     out = Expr[]
-#     if expression.head == :call || expression.head == :comparison
-#         push!(out, expression)
-#         return out
-#     end
-#     for a in expression.args
-#         if a.head == :&& || a.head == :||
-#             out = vcat(out, parse_expression(a))
-#         else a.head == :call
-#             push!(out, a)
-#         end
-#     end
-#     return out
-# end
 
-# function return_function(
-#     val::Symbol
-# )
-#     if val == :<
-#         return <
-#     elseif val == :>
-#         return >
-#     elseif val == :<=
-#         return <=
-#     elseif val == :>=
-#         return >=
-#     else
-#         error("Function Symbol must be a comparison")
-#     end
-# end
+create_filter(x::AbstractArray{<:Real}) = "IN ($(join(x, ", ")))"
+create_filter(x::AbstractArray) = "IN ('$(join(x, "', '"))')"
+create_filter(x::Missing) = "IS NOT NULL"
+create_filter(x::Real) = "= $x"
+create_filter(x::AbstractString) = "= '$x'"
 
-# function reverse_return_function(
-#     val::Symbol
-# )
-#     if val == :<
-#         return return_function(:>)
-#     elseif val == :>
-#         return return_function(:<)
-#     elseif val == :<=
-#         return return_function(:>=)
-#     elseif val == :>=
-#         return return_function(:<=)
-#     else
-#         error("Function Symbol must be a comparison")
-#     end
-# end
-
-# function push_condition!(
-#     conditions::Array{Tuple{Function, Symbol, Symbol}},
-#     f::Symbol,
-#     first::Expr,
-#     second::Expr
-# )
-#     if first.args[1] == :left && second.args[1] == :right
-#         push!(
-#             conditions,
-#             (
-#                 return_function(f),
-#                 eval(first.args[2]),
-#                 eval(second.args[2])
-#             )
-#         )
-#     elseif first.args[1] == :right && second.args[1] == :left
-#         push!(
-#             conditions,
-#             (
-#                 reverse_return_function(f),
-#                 eval(second.args[2]),
-#                 eval(first.args[2])
-#             )
-#         )
-#     else
-#         error("Comparison must have right and left as labels")
-#     end
-# end
-
-# function expressions_to_conditions(
-#     expressions::Array{Expr}
-# )
-#     out = Tuple{Function, Symbol, Symbol}[]
-#     for x in expressions
-#         if x.head == :call
-#             push_condition!(
-#                 out,
-#                 x.args[1],
-#                 x.args[2],
-#                 x.args[3]
-#             )
-#         elseif x.head == :comparison
-#             for i in 1:2:length(x.args)-1
-#                 push_condition!(
-#                     out,
-#                     x.args[i+1],
-#                     x.args[i],
-#                     x.args[i+2]
-#                 )
-#             end
-#         end
-#     end
-#     return out
-# end
-            
-
-
-
-
-
-# function parse_expr(fil)
-#     fil = string(fil)
-#     for (s, r) in [("||", ") .| ("), ("&&", ") .& ("), ("<", ".<"), (">", ".>"), (r"left\.([^\s]*)", s"df1[i, :\1]"), (r"right\.([^\s]*)", s"temp[:, :\1]")]
-#         fil = replace(fil, s => r)
-#     end
-#     fil = "($fil)"
-#     Meta.parse(fil)
-# end
-
-
-
-
-# function join_helper(
-#     df1,
-#     df2,
-#     on,
-#     conditions,
-#     args...
-# )
-#     #new_conditions = conditions |> parse_expression |> expressions_to_conditions
-#     quote
-#         $range_join(
-#             $df1,
-#             $df2,
-#             $on,
-#             $conditions;
-#             $(args...)
-#         )
-#     end
-# end
-
-# macro join(
-#     df1,
-#     df2,
-#     on,
-#     conditions,
-#     args...
-# )
-#     local new_conditions = conditions |> parse_expression |> expressions_to_conditions
-#     #local aakws = [esc(a) for a in args]
-#     esc(join_helper(df1, df2, on, new_conditions, args...))
-# end
+function create_filter(
+    filters::Dict{String, <:Any},
+    fil = ""
+)
+    for (key, data) in filters
+        if length(fil) > 0
+            fil *= " AND "
+        else
+            fil *= " WHERE "
+        end
+        fil *= "$key $(create_filter(data))"
+    end
+    return fil
+end
