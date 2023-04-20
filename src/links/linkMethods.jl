@@ -154,6 +154,25 @@ function method_is_missing(x, y)
     )
 end
 
+"""
+    function all_pairs(
+        a::Type{<:AbstractIdentifier},
+        b::Type{<:AbstractIdentifier};
+        out = Vector{Tuple{DataType, DataType}}(),
+        test_fun=base_method_exists
+    )
+
+Generates a vector of tuples for which a method exists. It specifically looks
+for base types (not abstract types).
+
+`test_fun` has two values defined:
+- `base_method_exists` looks for methods that have the two types provided
+    and that link is a direct link (e.g., Permno <-> NCusip), as opposed to a
+    method that takes more than a single step
+- `method_is_missing` looks for methods that do not exist, this is designed to
+    look for cases where a new method is needed, typically taking more than a
+    single step to complete
+"""
 function all_pairs(
     a::Type{<:AbstractIdentifier},
     b::Type{<:AbstractIdentifier};
@@ -252,10 +271,7 @@ Picks the best identifier based on the vector of links provided.
 
 - `allow_inexact_date=true`: If true, and the length of the supplied vector is 1, then is will return that
   value even if the supplied date does not fit within the link.
-- `allow_parent_firm=false`: If true, then the match will retry with a parent firm. For example, if matching
-    Cusip -> Permno, but there is no exact match, then the function will try again with the Cusip6 -> Permno.
-    In cases of a SecurityIdentifier -> SecurityIdentifier, this will lead to inexact matches, but if the goal
-    is a SecurityIdentifier -> FirmIdentifier (e.g., Cusip -> GVKey), this will create more matches.
+
 """
 function choose_best_match(
     data::AbstractVector{L},
@@ -267,7 +283,7 @@ function choose_best_match(
     for (i, v) in enumerate(data)
         if dt in v
             # either first or the current one is higher priority
-            if best == 0 || data[best] < data[i]
+            if best == 0 || is_higher_priority(data[i], data[best], dt, args...)
                 best = i
             end
         end

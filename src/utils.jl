@@ -230,10 +230,8 @@ function filter_data(
     return fil
 end
 
-"""
-I need the keymap returned instead of the full
-SubDataFrame
-"""
+# I need the keymap returned instead of the full
+# SubDataFrame
 function special_get(gdf, key)
     if haskey(gdf.keymap, key)
         x = gdf.keymap[key]

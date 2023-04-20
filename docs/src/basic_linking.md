@@ -50,6 +50,45 @@ julia> download_all_links(db)
 ```
 Which downloads all 6 default tables and returns those 6 DataFrames. Note that if your WRDS account lacks access to one of the tables, you need to change which items are downloaded.
 
+For example, the code I use when starting a project is:
+```julia
+data_dir = joinpath(path_to_saved_files)
+dfs = download_all_links(db)
+files = [
+    "crsp_links",
+    "crsp_comp_links",
+    "gvkey_cik_links",
+    "ibes_links",
+    "option_links",
+    "ravenpack_links"
+]
+# I prefer Arrow.jl and feather files, replace with CSV.jl if desired
+for (df, file) in zip(dfs, files)
+    Arrow.write(joinpath(data_dir, file * ".feather"), df)
+end
+```
+
+Then, whenever I reload the project:
+```julia
+funs=[
+    generate_crsp_links,
+    generate_comp_crsp_links,
+    generate_comp_cik_links,
+    generate_ibes_links,
+    generate_option_crsp_links,
+    generate_ravenpack_links
+]
+for (file, f) in zip(files, funs)
+    @chain joinpath(data_dir, file * ".feather") begin
+        Arrow.Table
+        DataFrame
+        copy
+        f
+    end
+end
+create_all_links()
+```
+
 ## Linking Identifiers
 
 Once the initial data is downloaded and necessary functions are created, the package provides a consistent set of methods to convert one identifier to any other. This follows the pattern:
@@ -64,6 +103,20 @@ CIK(Permno(47896), Date(2020))
 CIK(NCusip("46625H21"), Date(2020))
 ```
 As you can see, this includes cases where there is not a table providing a direct link (CIK <-> Permno, CIK <-> NCusip). This makes it easy to link the varied datasets in WRDS.
+
+These functions can be easily used with broadcasting:
+```@repl
+GVKey.(Permno.([47896, 44206, 46703]), Date(2020))
+GVKey.(Permno.([47896, 44206, 46703]), [Date(2018), Date(2019), Date(2020)])
+```
+
+Or with other packages such as [DataFramesMeta.jl](https://juliadata.github.io/DataFramesMeta.jl/stable/):
+```julia
+@chain df begin
+    @rtransform(:gvkey = GVKey(Permno(:permno), :date))
+end
+```
+
 
 All of the identifiers that this package provides by default are seen in [Identifier Types](@ref). This is expandable as discussed in [Adding New Identifiers](@ref).
 

@@ -40,12 +40,18 @@ function check_priority_errors(data::AbstractVector{T}) where {T<:AbstractLinkPa
                 push!(possible, v)
             end
         end
-        cur_max = argmax(possible)
+        best = 0
+        for (i, v) in enumerate(possible)
+            # either first or the current one is higher priority
+            if best == 0 || is_higher_priority(possible[i], possible[best])
+                best = i
+            end
+        end
         for i in 1:length(possible)
-            if i == cur_max
+            if i == best
                 continue
             end
-            if !(possible[i] < possible[cur_max]) && childID(possible[i]) != childID(possible[cur_max])
+            if !(is_higher_priority(possible[best], possible[i])) && childID(possible[i]) != childID(possible[best])
                 # println(possible)
                 return true
             end
@@ -93,6 +99,21 @@ the first being ready to convert to type T1 and the second ready to convert
 to type T2. This function returns a tuple of two dictionaries:
 `(Dict{T1, LP{T1, T2}},Dict{T2, LP{T2, T1}})`
 which is easily passed to [`new_link_method`](@ref).
+
+## Example
+```julia
+create_link_pair(
+    LinkPair,
+    Permno,
+    NCusip,
+    df,
+    :permno,
+    :ncusip,
+    :namedt,
+    :nameenddt,
+    :priority
+)
+```
 """
 function create_link_pair(
     ::Type{LP},

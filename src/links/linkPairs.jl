@@ -2,11 +2,11 @@
 abstract type AbstractLinkPair{T1<:AbstractIdentifier, T2<:AbstractIdentifier} end
 
 function Base.show(io::IO, x::AbstractLinkPair{T1, T2}) where {T1, T2}
-    show(io, "$T1($(x.parent)) -> $T2($(x.child)) valid $(x.dt1) - $(x.dt2) with priority $(round(x.priority, digits=3))")
+    show(io, "$T1($(parentID(x))) -> $T2($(childID(x))) valid $(min_date(x)) - $(max_date(x)) with priority $(round(priority(x), digits=3))")
 end
 
 function Base.print(io::IO, x::AbstractLinkPair{T1, T2}) where {T1, T2}
-    print(io, "$T1($(x.parent)) -> $T2($(x.child)) valid $(x.dt1) - $(x.dt2) with priority $(round(x.priority, digits=3))")
+    print(io, "$T1($(parentID(x))) -> $T2($(childID(x))) valid $(min_date(x)) - $(max_date(x)) with priority $(round(priority(x), digits=3))")
 end
 
 
@@ -15,12 +15,28 @@ parentID(data::AbstractLinkPair) = data.parent
 childID(data::AbstractLinkPair) = data.child
 min_date(data::AbstractLinkPair) = data.dt1
 max_date(data::AbstractLinkPair) = data.dt2
-priority(data::AbstractLinkPair) = data.priority
+priority(data::AbstractLinkPair, args...) = data.priority
 
 Base.in(dt::Date, link::AbstractLinkPair) = min_date(link) <= dt <= max_date(link)
 
-function Base.isless(data1::AbstractLinkPair{T1, T2}, data2::AbstractLinkPair{T1, T2}) where {T1, T2}
-    priority(data1) < priority(data2)
+"""
+    is_higher_priority(
+        data1::AbstractLinkPair{T1, T2},
+        data2::AbstractLinkPair{T1, T2},
+        args...
+    ) where {T1, T2}
+
+Determines whether data1 has higher priority than data2. `args...` are
+automatically passed to the `priority`function, which can then deal
+with special circumstances (currently passed as the date of the match).
+However, none of the default settings use this.
+"""
+function is_higher_priority(
+    data1::AbstractLinkPair{T1, T2},
+    data2::AbstractLinkPair{T1, T2},
+    args...
+) where {T1, T2}
+    priority(data1, args...) > priority(data2, args...)
 end
 
 
@@ -90,7 +106,7 @@ end
 
 
 # GVKey is only ever linked to one CIK
-Base.isless(data1::LinkPair{T1, T2}, data2::LinkPair{T1, T2}) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = false
+is_higher_priority(data1::LinkPair{T1, T2}, data2::LinkPair{T1, T2}, args...) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = false
 Base.in(dt::Date, link::LinkPair{T1, T2}) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = true
 #Base.in(dt::Date, link::LinkPair{T1, T2}) where {T1<:Union{NCusip, RPEntity}, T2<:Union{NCusip, RPEntity}} = min_date(link) <= dt <= max_date(link)
 

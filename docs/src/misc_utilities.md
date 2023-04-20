@@ -1,6 +1,7 @@
 # Utilities
 ```@docs
 range_join
-check_schema_perms
-approx_row_count
+WRDSMerger.check_schema_perms
+WRDSMerger.approx_row_count
+WRDSMerger.modify_col!
 ```

@@ -1,4 +1,4 @@
-using SQLite, DataFrames, Dates, Test, CSV
+using SQLite, DataFrames, Dates, Test, CSV, Documenter
 using WRDSMerger
 
 ##
@@ -184,17 +184,17 @@ files = [
     "crsp_links",
     "crsp_comp_links",
     "gvkey_cik_links",
-    "ibes_links",
-    "option_links",
-    "ravenpack_links"
+    # "ibes_links",
+    # "option_links",
+    # "ravenpack_links"
 ]
 funs=[
     generate_crsp_links,
     generate_comp_crsp_links,
     generate_comp_cik_links,
-    generate_ibes_links,
-    generate_option_crsp_links,
-    generate_ravenpack_links
+    # generate_ibes_links,
+    # generate_option_crsp_links,
+    # generate_ravenpack_links
 ]
 for (file, fun) in zip(files, funs)
     fun(
@@ -203,6 +203,7 @@ for (file, fun) in zip(files, funs)
         )
     )
 end
+create_all_links()
 
 @test isa(Permno(47896), Permno)
 @test Permno(Permco(20436), Date(2020)) == 47896
@@ -215,6 +216,8 @@ end
 
 @test Permno(NCusip("16161A10"), Date(2020)) == 47896
 @test Permno(NCusip("16161A10"), Date(2020); allow_inexact_date=false) |> ismissing
+##
+doctest(WRDSMerger)
 ##
 
 df1 = DataFrame(
