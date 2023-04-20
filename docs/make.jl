@@ -49,3 +49,8 @@ Documenter.makedocs(
         "Miscellaneous Utilities" => "misc_utilities.md"
     ]
 )
+
+deploydocs(
+    repo = "github.com/junder873/WRDSMerger.jl.git",
+    target = "build",
+)
