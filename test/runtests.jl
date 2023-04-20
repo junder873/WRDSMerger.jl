@@ -184,17 +184,17 @@ files = [
     "crsp_links",
     "crsp_comp_links",
     "gvkey_cik_links",
-    # "ibes_links",
-    # "option_links",
-    # "ravenpack_links"
+    "ibes_links",
+    "option_links",
+    "ravenpack_links"
 ]
 funs=[
     generate_crsp_links,
     generate_comp_crsp_links,
     generate_comp_cik_links,
-    # generate_ibes_links,
-    # generate_option_crsp_links,
-    # generate_ravenpack_links
+    generate_ibes_links,
+    generate_option_crsp_links,
+    generate_ravenpack_links
 ]
 for (file, fun) in zip(files, funs)
     fun(
@@ -217,6 +217,15 @@ create_all_links()
 @test Permno(NCusip("16161A10"), Date(2020)) == 47896
 @test Permno(NCusip("16161A10"), Date(2020); allow_inexact_date=false) |> ismissing
 ##
+DocMeta.setdocmeta!(
+    WRDSMerger,
+    :DocTestSetup,
+    quote
+        using WRDSMerger, Dates
+    end;
+    recursive=true
+)
+
 doctest(WRDSMerger)
 ##
 
