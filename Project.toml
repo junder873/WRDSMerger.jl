@@ -1,7 +1,7 @@
 name = "WRDSMerger"
 uuid = "59d27aa3-834e-4232-9046-52ef43e86786"
 authors = ["junder873 <junder873@gmail.com>"]
-version = "0.5.0"
+version = "0.5.1"
 
 [deps]
 DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
@@ -12,10 +12,10 @@ LibPQ = "194296ae-ab2e-5f79-8cd4-7183a0a5a0d1"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [compat]
-DBInterface = "2.5"
-DataFrames = "1.5"
-LibPQ = "1.15"
-julia = "1.8"
+DBInterface = "2"
+DataFrames = "1"
+LibPQ = "1"
+julia = "1.6"
 
 [extras]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
