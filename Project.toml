@@ -1,7 +1,7 @@
 name = "WRDSMerger"
 uuid = "59d27aa3-834e-4232-9046-52ef43e86786"
 authors = ["junder873 <junder873@gmail.com>"]
-version = "0.5.1"
+version = "0.5.2"
 
 [deps]
 DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
