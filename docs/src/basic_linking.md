@@ -42,7 +42,7 @@ julia> create_all_links() # defines functions between NCusip <-> GVKey,
 # Ticker <-> GVKey, etc.
 ```
 
-The generate functions return the DataFrame that is downloaded so you can save it locally (with CSV.jl, Arrow.jl, etc.) and can use again as opposed to re-downloading the data.
+The generate functions return the DataFrame that is downloaded so you can save it locally (with [CSV.jl](https://github.com/JuliaData/CSV.jl), [Arrow.jl](https://github.com/apache/arrow-julia), etc.) and can use again as opposed to re-downloading the data.
 
 This package also provides a simple function that runs all of these:
 ```julia
