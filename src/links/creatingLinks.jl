@@ -158,7 +158,7 @@ end
 function generate_ibes_links(
     df_in::AbstractDataFrame
 )
-    df = DataFrame(df_in)
+    df = select(df_in, :ticker, :permno, :ncusip, :sdate, :edate, :score) |> copy
     df = dropmissing(df, [:permno, :ncusip])
     df[!, :priority] = 1 ./ df[:, :score]
     temp = create_link_pair(
@@ -220,9 +220,21 @@ function generate_crsp_links(
 end 
 function generate_crsp_links(
     df_in::AbstractDataFrame;
-    priority_col=:mkt_cap
+    priority_col=:mkt_cap,
+    cols = [
+        :permno,
+        :permco,
+        :ncusip,
+        :cusip,
+        :ticker,
+        :namedt,
+        :nameenddt
+    ]
 )
-    df = DataFrame(df_in)
+    df = select(
+        df_in,
+        vcat(cols, priority_col)...
+    ) |> copy
     df[!, :ncusip2] = df[:, :ncusip]
     df[!, :cusip2] = df[:, :cusip]
     ids = [
@@ -286,9 +298,18 @@ function generate_comp_crsp_links(
     generate_comp_crsp_links(df)
 end
 function generate_comp_crsp_links(
-    df_in::AbstractDataFrame
+    df_in::AbstractDataFrame;
+    cols=[
+        :gvkey,
+        :lpermno,
+        :lpermco,
+        :linkdt,
+        :linkenddt,
+        :linkprim,
+        :linktype
+    ]
 )
-    df = DataFrame(df_in)
+    df = select(df_in, cols...) |> copy
     for i in 1:nrow(df)
         # the notes specifically point out that if the linktype is
         # "LS", then the gvkey - permco link is not valid, so this
@@ -343,9 +364,13 @@ function generate_comp_cik_links(
     generate_comp_cik_links(df)
 end
 function generate_comp_cik_links(
-    df_in::AbstractDataFrame
+    df_in::AbstractDataFrame;
+    cols=[
+        :gvkey,
+        :cik
+    ]
 )
-    df = DataFrame(df_in)
+    df = select(df_in, cols...) |> copy
     temp = create_link_pair(
         LinkPair,
         GVKey,
@@ -390,9 +415,14 @@ function generate_option_crsp_links(
     generate_option_crsp_links(df)
 end
 function generate_option_crsp_links(
-    df_in::AbstractDataFrame
+    df_in::AbstractDataFrame;
+    cols=[
+        :secid,
+        :cusip,
+        :effect_date
+    ]
 )
-    df = DataFrame(df_in)
+    df = select(df_in, cols...) |> copy
     for i in 1:nrow(df)
         allowmissing!(df, :cusip)
         if df[i, :cusip] == "99999999"
@@ -455,9 +485,15 @@ function generate_ravenpack_links(
     generate_ravenpack_links(df)
 end
 function generate_ravenpack_links(
-    df_in::AbstractDataFrame
+    df_in::AbstractDataFrame;
+    cols=[
+        :rp_entity_id,
+        :range_start,
+        :range_end,
+        :ncusip
+    ]
 )
-    df = DataFrame(df_in)
+    df = select(df_in, cols...) |> copy
     df = sort(df, [:rp_entity_id, :range_start])
     df[!, :range_start] = Date.(df[:, :range_start])
     df = transform(groupby(df, :rp_entity_id), [:range_start, :range_end] => (x, y) -> adjust_next_day(x, y) => :range_end)
