@@ -98,19 +98,9 @@ end
 function modify_col!(df::AbstractDataFrame, col::String, ::Type{<:Any})
 end
 
-function run_sql_query(
-    conn::LibPQ.Connection,
-    q::AbstractString
-)
-    df = LibPQ.execute(conn, q) |> DataFrame
-    for col in names(df)
-        modify_col!(df, col, eltype(df[:, col]))
-    end
-    df
-end
 
 function run_sql_query(
-    conn::DBInterface.Connection,
+    conn,
     q::AbstractString
 )
     df = DBInterface.execute(conn, q) |> DataFrame

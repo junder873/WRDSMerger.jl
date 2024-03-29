@@ -1,6 +1,6 @@
 
 function comp_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     gvkeys::AbstractArray{String},
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
@@ -37,7 +37,7 @@ end
 
 """
     function comp_data(
-        conn::Union{LibPQ.Connection, DBInterface.Connection}[,
+        conn[,
         gvkeys::AbstractArray{String},]
         dateStart::Union{Date,Int}=1950,
         dateEnd::Union{Date,Int}=Dates.today();
@@ -61,7 +61,7 @@ Filters is a dictionary of String => String (or array of String) pairings that
 will be applied to the SQL query.
 """
 function comp_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
     annual::Bool=true,

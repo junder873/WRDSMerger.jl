@@ -1,19 +1,19 @@
 
 """
     function crsp_stocknames(
-        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        conn;
         cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"]
     )
 
     function crsp_stocknames(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        conn,
         cusip::Array{String};
         cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
         cusip_col="cusip", # either "cusip" "ncusip" or "ticker"
     )
 
     function crsp_stocknames(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        conn,
         permno::Array{<:Number};
         cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
     )
@@ -25,7 +25,7 @@ a list of permnos.
 
 """
 function crsp_stocknames(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
+    conn;
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
     filters::Dict{String, <:Any}=Dict(
         "ncusip" => missing
@@ -43,7 +43,7 @@ function crsp_stocknames(
 end
 
 function crsp_stocknames(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     cusip::Array{String};
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
     cusip_col="cusip", # either "cusip" "ncusip" or "ticker"
@@ -70,7 +70,7 @@ function crsp_stocknames(
 end
 
 function crsp_stocknames(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     permno::Array{<:Number};
     cols::Array{String}=["permno", "cusip", "ncusip", "comnam", "namedt", "nameenddt", "ticker"],
     filters::Dict{String, <:Any}=Dict(
@@ -96,7 +96,7 @@ end
 
 """
     function crsp_market(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        conn,
         dateStart::Union{Date,Int}=1950,
         dateEnd::Union{Date,Int}=Dates.today();
         col::Union{String, Array{String}}="vwretd"
@@ -112,7 +112,7 @@ for each day (with various return columns). Available columns are:
 - "sprtrn": S&P500 return
 """
 function crsp_market(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     dateStart::Union{Date,Int}=1950,
     dateEnd::Union{Date,Int}=Dates.today();
     cols::Union{String, Array{String}}="vwretd"
@@ -191,7 +191,7 @@ end
 
 """
     function crsp_data(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        conn,
         [permnos::Vector{<:Real},]
         s::Date=Date(1925),
         e::Date=today();
@@ -201,7 +201,7 @@ end
     )
 
     function crsp_data(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        conn,
         permnos::Vector{<:Real},
         dates::Vector{Date},
         [dates_end::Vector{Date}];
@@ -230,7 +230,7 @@ WRDSMerger.default_tables["crsp_delist"] = "crsp.msedelist"
     set to true, it will only do the operations that it has the data for.
 """
 function crsp_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     permnos::Vector{<:Real},
     date_start::Date=Date(1926),
     date_end::Date=today();
@@ -252,7 +252,7 @@ function crsp_data(
 end
 
 function crsp_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     s::Date=Date(1925),
     e::Date=today();
     cols = ["ret", "vol", "shrout"],
@@ -282,7 +282,7 @@ end
 
 
 function crsp_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     permnos::Vector{<:Real},
     dates::Vector{Date};
     cols=["ret", "vol", "shrout"],
@@ -344,7 +344,7 @@ function crsp_data(
 end
 
 function crsp_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     permnos::Vector{<:Real},
     dates_min::Vector{Date},
     dates_max::Vector{Date};
@@ -396,7 +396,7 @@ function crsp_data(
 end
 
 function crsp_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     df::DataFrame;
     cols = ["ret", "vol", "shrout"],
     pull_method::Symbol=:optimize, # :optimize, :minimize, :stockonly, :alldata,
@@ -455,7 +455,7 @@ end
 
 """
     function crsp_delist(
-        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        conn;
         cols::Array{String}=[
             "permno",
             "dlstdt",
@@ -469,7 +469,7 @@ Fetches the CRSP delist dataset, typically for the returns
 on the day of delisting.
 """
 function crsp_delist(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     date_start::Date=Date(1926),
     date_end::Date=today();
     cols::Array{String}=[

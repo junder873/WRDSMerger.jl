@@ -8,7 +8,6 @@ module WRDSMerger
 using DataFrames
 using Dates
 using Statistics
-using LibPQ
 using DBInterface
 using InteractiveUtils
 

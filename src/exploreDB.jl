@@ -1,10 +1,10 @@
 """
-    list_libraries(conn::Union{LibPQ.Connection, DBInterface.Connection})
+    list_libraries(conn)
 
 Load the list of Postgres schemata
 the user has permission to access
 """
-function list_libraries(conn::Union{LibPQ.Connection, DBInterface.Connection})
+function list_libraries(conn)
     query = """
         WITH RECURSIVE "names"("name") AS (
             SELECT n.nspname AS "name"
@@ -22,11 +22,11 @@ end
 
 
 """
-    check_schema_perms(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String)
+    check_schema_perms(conn, library::String)
 
 Verify that the user can access a schema
 """
-function check_schema_perms(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String)
+function check_schema_perms(conn, library::String)
     # Verify that the library exists
 
     if library in list_libraries(conn).name
@@ -42,11 +42,11 @@ function check_schema_perms(conn::Union{LibPQ.Connection, DBInterface.Connection
 end
 
 """
-    list_tables(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String)
+    list_tables(conn, library::String)
 
 List all of the views/tables/foreign tables within a schema
 """
-function list_tables(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String)
+function list_tables(conn, library::String)
     if check_schema_perms(conn, library)
         query = """SELECT table_name FROM INFORMATION_SCHEMA.views 
                     WHERE table_schema IN ('$library');"""
@@ -55,11 +55,11 @@ function list_tables(conn::Union{LibPQ.Connection, DBInterface.Connection}, libr
 end
 
 """
-    approx_row_count(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String, table::String)
+    approx_row_count(conn, library::String, table::String)
 
 Get an approximate count of the number of rows in a table
 """
-function approx_row_count(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String, table::String)
+function approx_row_count(conn, library::String, table::String)
     if check_schema_perms(conn, library)
         query = """
             SELECT reltuples::bigint AS estimate
@@ -74,11 +74,11 @@ end
 
 
 """
-    describe_table(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String, table::String)
+    describe_table(conn, library::String, table::String)
 
 Get a table's description (row count, columns, column types)
 """
-function describe_table(conn::Union{LibPQ.Connection, DBInterface.Connection}, library::String, table::String)
+function describe_table(conn, library::String, table::String)
     if check_schema_perms(conn, library)
         row_count = approx_row_count(conn, library, table)
         println("There are approximately $row_count rows in $library.$table")
@@ -97,7 +97,7 @@ end
 
 """
     get_table(
-                    conn::Union{LibPQ.Connection, DBInterface.Connection},
+                    conn,
                     library::String,
                     table::String;
                     obs::Union{Nothing, Int} = nothing,
@@ -108,7 +108,7 @@ end
 Create a DataFrame from a table
 """
 function get_table(
-                    conn::Union{LibPQ.Connection, DBInterface.Connection},
+                    conn,
                     library::String,
                     table::String;
                     obs::Union{Nothing, Int} = nothing,
@@ -129,14 +129,14 @@ end
 
 """
     raw_sql(
-        conn::Union{LibPQ.Connection, DBInterface.Connection},
+        conn,
         query::String
     )
 
 Executes raw sql code, and converts code to a DataFrame
 """
 function raw_sql(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     query::String
 )
     return run_sql_query(conn, query)

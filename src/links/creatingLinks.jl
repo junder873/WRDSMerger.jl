@@ -138,7 +138,7 @@ end
 
 """
     generate_ibes_links(
-        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        conn;
         main_table=default_tables["wrdsapps_ibcrsphist"]
     )
 
@@ -149,7 +149,7 @@ WRDS file. If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_ibes_links(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
+    conn;
     main_table=default_tables["wrdsapps_ibcrsphist"]
 )
     df = download_ibes_links(conn; main_table)
@@ -192,7 +192,7 @@ end
 
 """
     generate_crsp_links(
-        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        conn;
         main_table=default_tables["crsp_stocknames"],
         stockfile=default_tables["crsp_stock_data"]
     )
@@ -211,7 +211,7 @@ market cap on the relevant day, but since this needs a static value, the
 default download is to average the market cap over the relevant period.
 """
 function generate_crsp_links(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
+    conn;
     main_table=default_tables["crsp_stocknames"],
     stockfile=default_tables["crsp_stock_data"]
 )
@@ -278,7 +278,7 @@ end
 
 """
     generate_comp_crsp_links(
-        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        conn;
         main_table=default_tables["crsp_a_ccm_ccmxpf_lnkhist"]
     )
 
@@ -291,7 +291,7 @@ If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_comp_crsp_links(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
+    conn;
     main_table=default_tables["crsp_a_ccm_ccmxpf_lnkhist"]
 )
     df = download_comp_crsp_links(conn; main_table)
@@ -344,7 +344,7 @@ end
 
 """
     generate_comp_cik_links(
-        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        conn;
         main_table=default_tables["comp_company"]
     )
 
@@ -357,7 +357,7 @@ If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_comp_cik_links(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
+    conn;
     main_table=default_tables["comp_company"]
 )
     df = download_comp_cik_links(conn; main_table)
@@ -394,7 +394,7 @@ end
 
 """
     generate_option_crsp_links(
-        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        conn;
         main_table=default_tables["optionm_all_secnmd"]
     )
 
@@ -408,7 +408,7 @@ If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_option_crsp_links(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
+    conn;
     main_table=default_tables["optionm_all_secnmd"]
 )
     df = download_option_crsp_links(conn; main_table)
@@ -461,7 +461,7 @@ end
 
 """
     generate_ravenpack_links(
-        conn::Union{LibPQ.Connection, DBInterface.Connection};
+        conn;
         main_table=default_tables["ravenpack_common_rp_entity_mapping"]
     )
 
@@ -478,7 +478,7 @@ If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_ravenpack_links(
-    conn::Union{LibPQ.Connection, DBInterface.Connection};
+    conn;
     main_table=default_tables["ravenpack_common_rp_entity_mapping"]
 )
     df = download_ravenpack_links(conn; main_table)

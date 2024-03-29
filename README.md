@@ -18,7 +18,7 @@ julia> using Pkg; Pkg.add("WRDSMerger")
 
 ## General Usage
 
-This package requires a subscription to WRDS and can only access datasets that are included in your subscription. There are several ways to connect to the database. The simplest and most reliable is to use [LibPQ.jl](https://github.com/invenia/LibPQ.jl), to initiate a connection run:
+This package requires a subscription to WRDS and can only access datasets that are included in your subscription. There are several ways to connect to the database. The simplest and most reliable is to use [LibPQ.jl](https://github.com/invenia/LibPQ.jl) (requires at least v1.16 of LibPQ.jl), to initiate a connection run:
 
 ```julia
 conn = LibPQ.Connection(

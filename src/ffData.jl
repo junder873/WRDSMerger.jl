@@ -1,5 +1,5 @@
 function ff_data(
-    conn::Union{LibPQ.Connection, DBInterface.Connection},
+    conn,
     date_start::Date=Date(1926, 7, 1),
     date_end::Date=today();
     cols::Array{String}=[
