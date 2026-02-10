@@ -1,6 +1,7 @@
 [deps]
-CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+DuckDB = "d2f5444f-75bc-4fdf-ac35-56f514c25e65"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 WRDSMerger = "59d27aa3-834e-4232-9046-52ef43e86786"

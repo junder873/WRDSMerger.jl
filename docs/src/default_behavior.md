@@ -1,15 +1,7 @@
 ```@setup default_behavior
-data_dir = joinpath("..", "..", "test", "data")
-using CSV, DataFrames, WRDSMerger, Dates
-files = [
-    "crsp_links",
-    "crsp_comp_links",
-    "gvkey_cik_links",
-    "ibes_links",
-    "option_links",
-    "ravenpack_links"
-]
-funs=[
+using DuckDB, DBInterface, DataFrames, WRDSMerger, Dates
+db = DBInterface.connect(DuckDB.DB, joinpath("..", "..", "test", "data", "test_data_final.duckdb"))
+funs = [
     generate_crsp_links,
     generate_comp_crsp_links,
     generate_comp_cik_links,
@@ -17,13 +9,10 @@ funs=[
     generate_option_crsp_links,
     generate_ravenpack_links
 ]
-for (file, fun) in zip(files, funs)
-    fun(
-        DataFrame(
-            CSV.File(joinpath(data_dir, file * ".csv"))
-        )
-    )
+for fun in funs
+    fun(db)
 end
+create_all_links()
 ```
 
 # Default Behavior
@@ -32,7 +21,7 @@ This package has some defaults that are important to be aware of during use.
 
 ## Different Return Types
 
-The general design principal in Julia is that if a type is a function name, it should return that type. In this package, this is not always the case. When an [`AbstractIdentifier`](@ref) uses an external type (e.g. `Int`), it will return that `AbstractIdentifier`. However, when an `AbstractIdentifier` is used on another `AbstractIdentifier`, it will most often return the underlying value. For example:
+The general design principle in Julia is that if a type is a function name, it should return that type. In this package, this is not always the case. When an [`AbstractIdentifier`](@ref) uses an external type (e.g. `Int`), it will return that `AbstractIdentifier`. However, when an `AbstractIdentifier` is used on another `AbstractIdentifier`, it will most often return the underlying value. For example:
 ```@repl default_behavior
 Permno(47896) # returns the type Permno
 Permno(Permco(20436), Date(2020)) # an Int type
@@ -47,9 +36,9 @@ WRDSMerger.convert_identifier(Permno, Permco(20436), Date(2020))
 
 ### Parent Firms
 
-Certain [`SecurityIdentifier`](@ref)s have a direct link to a parent firm, most obviously [`Cusip`](@ref) and [`NCusip`](@ref) (with [`Cusip6`](@ref) and [`NCusip6`](@ref)). In certain situations, it can make sense to allow a match to occur through these parent firms, such as when the end goal is to match a `SecurityIdentifier` to a [`FirmIdentifier`](@ref).
+Certain [`SecurityIdentifier`](@ref)s have a direct link to a parent firm, most obviously [`NCusip`](@ref) and [`HdrCusip`](@ref) (with [`NCusip6`](@ref) and [`HdrCusip6`](@ref)). These are type aliases for the parameterized `Cusip{HistCode}` and `Cusip6{HistCode}` types (e.g., `NCusip = Cusip{:historical}`, `HdrCusip = Cusip{:current}`). In certain situations, it can make sense to allow a match to occur through these parent firms, such as when the end goal is to match a `SecurityIdentifier` to a [`FirmIdentifier`](@ref).
 
-For example, consider the case of `NCusip("46625H21")`, which is not in the data. Therefore, when trying to convert his to another `SecurityIdentifier`, it will return `missing` since there is not an exact match:
+For example, consider the case of `NCusip("46625H21")`, which is not in the data. Therefore, when trying to convert this to another `SecurityIdentifier`, it will return `missing` since there is not an exact match:
 ```@repl default_behavior
 Permno(NCusip("46625H21"), Date(2020))
 ```

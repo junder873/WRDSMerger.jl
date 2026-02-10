@@ -54,6 +54,29 @@ end
 
 
 """
+    identifier_data(::Type{ID}, ::Type{T1}) where {ID<:AbstractIdentifier, T1<:AbstractIdentifier}
+
+Returns the underlying `Dict{T1, Vector{<:AbstractLinkPair{T1, ID}}}` that maps
+source identifiers of type `T1` to their link records targeting type `ID`.
+
+This function is automatically defined by [`new_link_method`](@ref) whenever a
+direct link (i.e., one backed by an `AbstractLinkPair` table) is created.
+It can be useful for inspecting the raw link data or for advanced workflows
+such as serializing the dictionary for faster future loading.
+
+If no direct link data has been loaded for the requested pair, a `MethodError`
+will be thrown.
+
+# Examples
+
+```julia
+# After links have been created:
+data = identifier_data(GVKey, Permno)
+```
+"""
+function identifier_data end
+
+"""
     new_link_method(data::Vector{L}) where {L<:AbstractLinkPair}
 
     new_link_method(data::Dict{T1, Vector{L}}) where {T1, ID, L<:AbstractLinkPair{T1, ID}}
@@ -70,6 +93,10 @@ is passed, this creates a direct link method, while passing two types
 will attempt to find a path between the two identifiers and define the appropriate
 function.
 
+When a direct link is created (via a vector or dictionary), this also defines an
+[`identifier_data`](@ref) method for the corresponding `(ID, T1)` pair, providing
+access to the underlying link dictionary.
+
 !!! note
     [`all_pairs`](@ref) is a relatively slow function, needing to repeatedly
     check what methods are available. Therefore, if needing to create many new
@@ -80,13 +107,18 @@ function new_link_method(data::Vector{L}) where {L<:AbstractLinkPair}
     new_link_method(Dict(data))
 end
 function new_link_method(data::Dict{T1, Vector{L}}) where {T1, ID, L<:AbstractLinkPair{T1, ID}}
+    @eval begin
+        function identifier_data(::Type{$ID}, ::Type{$T1})
+            $data
+        end
+    end
     if WRDSMerger.has_parent(T1)
         @eval begin
             function convert_identifier(
                 ::Type{$ID},
                 x::$T1,
                 dt::Date,
-                data::Dict{$T1, Vector{$L}}=$data;
+                data::Dict{$T1, Vector{$L}}=identifier_data($ID, $T1);
                 allow_parent_firm=false,
                 vargs...
             )
@@ -105,7 +137,7 @@ function new_link_method(data::Dict{T1, Vector{L}}) where {T1, ID, L<:AbstractLi
                 ::Type{$ID},
                 x::$T1,
                 dt::Date,
-                data::Dict{$T1, Vector{$L}}=$data;
+                data::Dict{$T1, Vector{$L}}=identifier_data($ID, $T1);
                 vargs...
             )
                 if haskey(data, x)
@@ -143,7 +175,7 @@ function new_link_method(
 end
 
 function base_method_exists(x, y)
-    !isempty(methods(convert_identifier, (Type{y}, x, Date, Dict)))
+    !isempty(methods(identifier_data, (Type{y}, Type{x})))
 end
 function method_is_missing(x, y)
     isempty(
@@ -154,43 +186,41 @@ function method_is_missing(x, y)
     )
 end
 
-"""
-    function all_pairs(
-        a::Type{<:AbstractIdentifier},
-        b::Type{<:AbstractIdentifier};
-        out = Vector{Tuple{DataType, DataType}}(),
-        test_fun=base_method_exists
-    )
+InteractiveUtils.subtypes(::Type{Cusip}) = [Cusip{HistCode} for HistCode in (:historical, :current)]
+InteractiveUtils.subtypes(::Type{Cusip6}) = [Cusip6{HistCode} for HistCode in (:historical, :current)]
 
-Generates a vector of tuples for which a method exists. It specifically looks
-for base types (not abstract types).
+function add_subtypes!(out::Vector{DataType}, a::Type{<:AbstractIdentifier})
+    if length(subtypes(a)) == 0
+        push!(out, a)
+    else
+        for x in subtypes(a)
+            add_subtypes!(out, x)
+        end
+    end
+    out
+end
 
-`test_fun` has two values defined:
-- `base_method_exists` looks for methods that have the two types provided
-    and that link is a direct link (e.g., Permno <-> NCusip), as opposed to a
-    method that takes more than a single step
-- `method_is_missing` looks for methods that do not exist, this is designed to
-    look for cases where a new method is needed, typically taking more than a
-    single step to complete
-"""
 function all_pairs(
     a::Type{<:AbstractIdentifier},
     b::Type{<:AbstractIdentifier};
     out = Vector{Tuple{DataType, DataType}}(),
     test_fun=base_method_exists
 )
-    for x in subtypes(a)
-        if isabstracttype(x)
-            out = all_pairs(x, b; out, test_fun)
-        end
-        for y in subtypes(b)
-            if x == y || isabstracttype(x)
+    all_subtypes_a = DataType[]
+    add_subtypes!(all_subtypes_a, a)
+    all_subtypes_b = DataType[]
+    if a == b
+        all_subtypes_b = all_subtypes_a
+    else
+        add_subtypes!(all_subtypes_b, b)
+    end
+    for i in all_subtypes_a
+        for j in all_subtypes_b
+            if i == j
                 continue
             end
-            if isabstracttype(y)
-                out = all_pairs(a, y; out, test_fun)
-            elseif test_fun(x, y)
-                push!(out, (x, y))
+            if test_fun(i, j)
+                push!(out, (i, j))
             end
         end
     end
@@ -233,17 +263,15 @@ end
 function get_steps(
     ::Type{T1},
     ::Type{T2};
-    current_links = all_pairs(AbstractIdentifier, AbstractIdentifier)
+    current_links = all_pairs(AbstractIdentifier)
 ) where {T1, T2}
     links = new_links([T1], current_links)
     find_path(links, current_links, T2)
 end
 
 has_parent(::Type{<:AbstractIdentifier}) = false
-has_parent(::Type{Cusip}) = true
-has_parent(::Type{NCusip}) = true
-parent_type(::Type{Cusip}) = Cusip6
-parent_type(::Type{NCusip}) = NCusip6
+has_parent(::Type{<:Cusip}) = true
+parent_type(::Type{Cusip{HistCode}}) where {HistCode}= Cusip6{HistCode}
 
 function all_same_child(data::AbstractVector{L}) where {L<:AbstractLinkPair}
     if length(data) == 1

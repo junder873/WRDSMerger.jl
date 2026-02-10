@@ -1,4 +1,15 @@
 
+"""
+    AbstractLinkPair{T1<:AbstractIdentifier, T2<:AbstractIdentifier}
+
+Abstract supertype for all link pairs. A link pair represents a directional
+relationship from identifier type `T1` to `T2` over a date range with an
+associated priority. See [`LinkPair`](@ref) for the concrete default implementation
+and [Defining New `AbstractLinkPair`s](@ref) for how to create custom subtypes.
+
+Required interface for subtypes: `parentID`, `childID`, `min_date`, `max_date`,
+`priority`.
+"""
 abstract type AbstractLinkPair{T1<:AbstractIdentifier, T2<:AbstractIdentifier} end
 
 function Base.show(io::IO, x::AbstractLinkPair{T1, T2}) where {T1, T2}
@@ -50,28 +61,19 @@ end
         priority::Real=0.0
     ) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier}
 
-    function LinkPair(
-        parent::T1,
-        child::T2,
-        dt1::Union{Missing, Date, String},
-        dt2::Union{Missing, Date, String},
-        linkprim::String,
-        linktype::String,
-    ) where {T1<:Union{GVKey, Permno, Permco}, T2<:Union{GVKey, Permno, Permco}}
-
 `LinkPair` is the basic structure that provides a link between two identifiers.
 These are defined as a single direction link (T1 -> T2) that is valid between
 a specific date range (inclusive) and has a given priority (higher is better).
 Priority is useful if there are overlapping T1 -> T2 items. For example, a
 [`FirmIdentifier`](@ref) likely has multiple [`SecurityIdentifier`](@ref)s
 that relate to it. One common way to pick between different `SecurityIdentifier`s
-is to pick the one with the large market cap as the primary.
+is to pick the one with the larger market cap as the primary.
 
-If defining a new identifier that has other methods of choosing priorities
-(such as a String indicating priority), it can help to define a function
-that converts these strings into a number. An example of this exists for
-linking GVKey -> Permno or Permco (and the reverse), which take in `linkprim`
-and `linktype` and convert those to the appropriate priority.
+If the source data provides priority as something other than a number
+(such as a String indicating priority), convert it to a numeric value before
+constructing the `LinkPair`. See [`gvkey_crsp_priority`](@ref) and
+[`crsp_gvkey_priority`](@ref) for examples of functions that convert
+CRSP/Compustat link priority strings into numeric priorities.
 """
 struct LinkPair{T1<:AbstractIdentifier, T2<:AbstractIdentifier} <: AbstractLinkPair{T1, T2}
     parent::T1
@@ -82,43 +84,72 @@ struct LinkPair{T1<:AbstractIdentifier, T2<:AbstractIdentifier} <: AbstractLinkP
     function LinkPair(
         t1::T1,
         t2::T2,
-        dt1::Union{Missing, Date, AbstractString}=Date(0, 1, 1),
-        dt2::Union{Missing, Date, AbstractString}=Date(9999, 12, 31),
+        dt1::Date=Date(0, 1, 1),
+        dt2::Date=Date(9999, 12, 31),
         priority::Real=0.0
     ) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier}
-        if ismissing(dt1)
-            dt1 = Date(0, 1, 1)
-        end
-        if ismissing(dt2)
-            dt2 = Date(9999, 12, 31)
-        end
-    
-        if typeof(dt1) == String
-            dt1 = Date(dt1)
-        end
-        if typeof(dt2) == String
-            dt2 = Date(dt2)
-        end
         return new{T1, T2}(t1, t2, dt1, dt2, priority)
     end
+    function LinkPair(
+        t1::T1,
+        t2::T2,
+        dt1::Date,
+        dt2::Missing,
+        priority::Real=0.0
+    ) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier}
+        return new{T1, T2}(t1, t2, dt1, Date(9999, 12, 31), priority)
+    end
+    function LinkPair(
+        t1::T1,
+        t2::T2,
+        dt1::Missing,
+        dt2::Missing,
+        priority::Real=0.0
+    ) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier}
+        return new{T1, T2}(t1, t2, Date(0, 1, 1), Date(9999, 12, 31), priority)
+    end
+
+        
 end
-
-
-
-# GVKey is only ever linked to one CIK
-is_higher_priority(data1::LinkPair{T1, T2}, data2::LinkPair{T1, T2}, args...) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = false
-Base.in(dt::Date, link::LinkPair{T1, T2}) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = true
-#Base.in(dt::Date, link::LinkPair{T1, T2}) where {T1<:Union{NCusip, RPEntity}, T2<:Union{NCusip, RPEntity}} = min_date(link) <= dt <= max_date(link)
-
 
 function LinkPair(
     t1::T1,
     t2::T2,
-    dt1::Union{Missing, Date, AbstractString},
-    dt2::Union{Missing, Date, AbstractString},
-    linkprim::AbstractString,
-    linktype::AbstractString,
-) where {T1<:GVKey, T2<:Union{Permno, Permco}}
+    dt1::String,
+    dt2::String,
+    priority::Real=0.0
+)
+    LinkPair(t1, t2, Date(dt1), Date(dt2), priority)
+end
+function LinkPair(
+    t1::T1,
+    t2::T2,
+    dt1::String,
+    dt2::Missing,
+    priority::Real=0.0
+)
+    LinkPair(t1, t2, Date(dt1), missing, priority)
+end
+
+# GVKey is only ever linked to one CIK
+is_higher_priority(data1::LinkPair{T1, T2}, data2::LinkPair{T1, T2}, args...) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = false
+Base.in(dt::Date, link::LinkPair{T1, T2}) where {T1<:Union{GVKey, CIK}, T2<:Union{GVKey, CIK}} = true
+
+"""
+    gvkey_crsp_priority(linkprim::AbstractString, linktype::AbstractString) -> Float64
+
+Converts CRSP/Compustat link descriptor strings into a numeric priority for
+links going from [`GVKey`](@ref) to a CRSP identifier ([`Permno`](@ref) or
+[`Permco`](@ref)). Higher values indicate a stronger link.
+
+The `linkprim` flag (P > C > J) receives the larger weight, reflecting
+that the primary security match matters most when starting from a firm
+identifier. `linktype` (LC > LU > LS > LX > LD > LN > NR > NU) serves
+as a tiebreaker.
+
+See also [`crsp_gvkey_priority`](@ref) for the reverse direction.
+"""
+function gvkey_crsp_priority(linkprim::AbstractString, linktype::AbstractString)
     priority = 0.0
     if linkprim == "P"
         priority += 3
@@ -144,17 +175,23 @@ function LinkPair(
     elseif linktype == "NU"
         priority += 0.1
     end
-    return LinkPair(t1, t2, dt1, dt2, priority)
+    return priority
 end
 
-function LinkPair(
-    t1::T1,
-    t2::T2,
-    dt1::Union{Missing, Date, AbstractString},
-    dt2::Union{Missing, Date, AbstractString},
-    linkprim::AbstractString,
-    linktype::AbstractString,
-) where {T1<:Union{Permno, Permco}, T2<:GVKey}
+"""
+    crsp_gvkey_priority(linkprim::AbstractString, linktype::AbstractString) -> Float64
+
+Converts CRSP/Compustat link descriptor strings into a numeric priority for
+links going from a CRSP identifier ([`Permno`](@ref) or [`Permco`](@ref)) to
+[`GVKey`](@ref). Higher values indicate a stronger link.
+
+The `linktype` flag (LC > LU > LS > LX > LD > LN > NR > NU) receives the
+larger weight, reflecting that the link quality matters most when starting
+from a security identifier. `linkprim` (P > C > J) serves as a tiebreaker.
+
+See also [`gvkey_crsp_priority`](@ref) for the reverse direction.
+"""
+function crsp_gvkey_priority(linkprim::AbstractString, linktype::AbstractString)
     priority = 0.0
     if linkprim == "P"
         priority += 0.3
@@ -180,6 +217,6 @@ function LinkPair(
     elseif linktype == "NU"
         priority += 1
     end
-    return LinkPair(t1, t2, dt1, dt2, priority)
+    return priority
 end
 

@@ -160,46 +160,60 @@ can contain numbers or letters (with a maximum length of 6
 characters).
 
 !!! note
-    `Cusip6` is different than [`NCusip6`](@ref). The standard in
-    CRSP (and some other WRDS datasets) is that `Cusip6` represents
-    the most recently available `NCusip6` for a given firm, while
-    `NCusip6` will provide a historical view of that firm.
+    `Cusip6` is a parameterized type: `NCusip6 = Cusip6{:historical}` and
+    `HdrCusip6 = Cusip6{:current}`. Calling `Cusip6(x)` defaults to
+    historical (`NCusip6`).
+
+    In CRSP V1, the column `cusip` (first 6 chars) was the current/header
+    value and `ncusip` (first 6 chars) was historical. In CRSP V2, the column
+    `cusip` (first 6 chars) is historical and `hdrcusip` (first 6 chars) is
+    the current value.
 
 ## Example
 
 ```jldoctest
-julia> Cusip6("46625H") # Cusip6 for Chase
-Cusip6("46625H")
+julia> HdrCusip6("46625H") # Cusip6 for Chase
+HdrCusip6("46625H")
 
-julia> Cusip6(Cusip("46625H10")) # Cusip6 is the first 6 digits of a Cusip
-Cusip6("46625H")
+julia> HdrCusip6(HdrCusip("46625H10")) # Cusip6 is the first 6 digits of a Cusip
+HdrCusip6("46625H")
 
-julia> Cusip6(Permno(47896), Date(2020))
+julia> HdrCusip6(Permno(47896), Date(2020))
 "46625H"
 ```
 
 Related to the note on the difference between `Cusip6` and `NCusip6`:
 ```jldoctest
-julia> Cusip6(Permno(47896), Date(2020))
+julia> HdrCusip6(Permno(47896), Date(2020))
 "46625H"
 
 julia> NCusip6(Permno(47896), Date(2020))
 "46625H"
 
-julia> Cusip6(Permno(47896), Date(1998))
+julia> HdrCusip6(Permno(47896), Date(1998))
 "46625H"
 
 julia> NCusip6(Permno(47896), Date(1998))
 "16161A"
 ```
 """
-struct Cusip6 <: FirmIdentifier
+struct Cusip6{HistCode} <: FirmIdentifier
     val::String
-    function Cusip6(s::AbstractString)
+    function Cusip6(s::AbstractString; historical=true)
         if length(s) < 6
             error("Cusip6 must be 6 characters")
         end
-        new(String(s[1:6]))
+        if historical
+            new{:historical}(String(s[1:6]))
+        else
+            new{:current}(String(s[1:6]))
+        end
+    end
+    function Cusip6{HistCode}(s::AbstractString) where {HistCode}
+        if length(s) < 6
+            error("Cusip6 must be 6 characters")
+        end
+        new{HistCode}(String(s[1:6]))
     end
 end
 
@@ -219,10 +233,13 @@ can contain numbers or letters (with a maximum length of 6
 characters).
 
 !!! note
-    `NCusip6` is different than [`Cusip6`](@ref). The standard in
-    CRSP (and some other WRDS datasets) is that `Cusip6` represents
-    the most recently available `NCusip6` for a given firm, while
-    `NCusip6` will provide a historical view of that firm.
+    `NCusip6` is from CRSP v1 where it would provide a historical view
+    of the first 6 characters of the Cusip, while Cusip6 would provide
+    the most recently available 6 characters.
+
+    In CRSP v2, Cusip6 would represent the historical information while
+    HdrCusip6 would represent the most recently available 6 characters.
+
 
 ## Example
 
@@ -239,30 +256,22 @@ julia> NCusip6(Permno(47896), Date(2020))
 
 Related to the note on the difference between `Cusip6` and `NCusip6`:
 ```jldoctest
-julia> Cusip6(Permno(47896), Date(2020))
+julia> HdrCusip6(Permno(47896), Date(2020))
 "46625H"
 
 julia> NCusip6(Permno(47896), Date(2020))
 "46625H"
 
-julia> Cusip6(Permno(47896), Date(1998))
+julia> HdrCusip6(Permno(47896), Date(1998))
 "46625H"
 
 julia> NCusip6(Permno(47896), Date(1998))
 "16161A"
 ```
 """
-struct NCusip6 <: FirmIdentifier
-    val::String
-    function NCusip6(s::AbstractString)
-        if length(s) < 6
-            error("Cusip6 must be 6 characters")
-        end
-        new(String(s[1:6]))
-    end
-end
+const NCusip6 = Cusip6{:historical}
 
-value(n::NCusip6) = n.val
+const HdrCusip6 = Cusip6{:current}
 
 
 """
@@ -283,10 +292,17 @@ or the checksum is explicitly passed, the checksum is validated and
 a warning is given if it is an invalid checksum.
 
 !!! note
-    `Cusip` is different than [`NCusip`](@ref). The standard in
-    CRSP (and some other WRDS datasets) is that `Cusip` represents
-    the most recently available `NCusip` for a given firm, while
-    `NCusip` will provide a historical view of that firm.
+    `Cusip` is a parameterized type: `NCusip = Cusip{:historical}` and
+    `HdrCusip = Cusip{:current}`. Calling `Cusip(x)` defaults to
+    historical (`NCusip`).
+
+    In CRSP V1, the column `cusip` was the current/header value and
+    `ncusip` was historical. In CRSP V2, the column `cusip` is historical
+    and `hdrcusip` is the current value. The default of `Cusip(x)` returning
+    a historical identifier is consistent with the V2 convention and is
+    generally the safer default since the inexact date matching
+    (see [`choose_best_match`](@ref)) will still find the correct link
+    when only one match exists.
 
 !!! note
     `Cusip` only stores 8 characters (not the checksum digit) and,
@@ -298,34 +314,34 @@ a warning is given if it is an invalid checksum.
 ## Example
 
 ```jldoctest
-julia> Cusip("46625H10") # Cusip for Chase
-Cusip("46625H10")
+julia> HdrCusip("46625H10") # Cusip for Chase
+HdrCusip("46625H10")
 
-julia> Cusip("46625H", "10") # can also provide the parts separately
-Cusip("46625H10")
+julia> HdrCusip("46625H", "10") # can also provide the parts separately
+HdrCusip("46625H10")
 
-julia> Cusip(Permno(47896), Date(2020))
+julia> HdrCusip(Permno(47896), Date(2020))
 "46625H10"
 ```
 
 Related to the note on the difference between `Cusip` and `NCusip`:
 ```jldoctest
-julia> Cusip(Permno(47896), Date(2020))
+julia> HdrCusip(Permno(47896), Date(2020))
 "46625H10"
 
 julia> NCusip(Permno(47896), Date(2020))
 "46625H10"
 
-julia> Cusip(Permno(47896), Date(1998))
+julia> HdrCusip(Permno(47896), Date(1998))
 "46625H10"
 
 julia> NCusip(Permno(47896), Date(1998))
 "16161A10"
 ```
 """
-struct Cusip <: SecurityIdentifier
+struct Cusip{HistCode} <: SecurityIdentifier
     val::String
-    function Cusip(s::AbstractString)
+    function Cusip(s::AbstractString; historical=true)
         if length(s) < 8
             error("Too few characters for Cusip")
         end
@@ -337,23 +353,54 @@ struct Cusip <: SecurityIdentifier
             "might not match other Cusips. To correct this error, pass " *
             "the first 8 characters of the string instead.")
         end
-        new(s[1:8])
+        if historical
+            new{:historical}(s[1:8])
+        else
+            new{:current}(s[1:8])
+        end
     end
-end
-
-function Cusip(issuer::AbstractString, issue::AbstractString, checksum=nothing)
-    if length(issuer) != 6
-        error("Issuer identification must be 6 characters")
+    function Cusip{HistCode}(s::AbstractString) where {HistCode}
+        if length(s) < 8
+            error("Too few characters for Cusip")
+        end
+        if length(s) > 9
+            error("Too many characters for Cusip")
+        end
+        if length(s) == 9 && luhn_checksum(s[1:8]) != parse(Int, s[9])
+            @warn("Invalid Checksum in parsing Cusip, this observation " *
+            "might not match other Cusips. To correct this error, pass " *
+            "the first 8 characters of the string instead.")
+        end
+        new{HistCode}(s[1:8])
     end
-    if length(issue) != 2
-        error("Issue must be 2 characters")
+    function Cusip(s::AbstractString, issue::AbstractString, checksum=nothing; historical=true)
+        if length(s) != 6
+            error("Issuer identification must be 6 characters")
+        end
+        if length(issue) != 2
+            error("Issue must be 2 characters")
+        end
+        if checksum !== nothing && (!)(0 ≤ checksum ≤ 9)
+            error("Checksum must be between 0 and 9 (inclusive)")
+        elseif checksum !== nothing && luhn_checksum(s * issue) != checksum
+            @warn("Invalid Checksum in parsing Cusip")
+        end
+        Cusip(s * issue; historical=historical)
     end
-    if checksum !== nothing && (!)(0 ≤ checksum ≤ 9)
-        error("Checksum must be between 0 and 9 (inclusive)")
-    elseif checksum !== nothing && luhn_checksum(issuer * issue) != checksum
-        @warn("Invalid Checksum in parsing Cusip")
+    function Cusip{HistCode}(s::AbstractString, issue::AbstractString, checksum=nothing) where {HistCode}
+        if length(s) != 6
+            error("Issuer identification must be 6 characters")
+        end
+        if length(issue) != 2
+            error("Issue must be 2 characters")
+        end
+        if checksum !== nothing && (!)(0 ≤ checksum ≤ 9)
+            error("Checksum must be between 0 and 9 (inclusive)")
+        elseif checksum !== nothing && luhn_checksum(s * issue) != checksum
+            @warn("Invalid Checksum in parsing Cusip")
+        end
+        new{HistCode}(s * issue)
     end
-    Cusip(issuer * issue)
 end
 
 
@@ -375,19 +422,22 @@ end
 
     NCusip(x::AbstractIdentifier, d::Date)::String
 
-`NCusip` is a common identifier within and outside of WRDS
-WRDS tracks the most recent `NCusip`s as [`Cusip`](@ref)
-all `NCusip`s are made up of 3 parts, issuer (first 6 characters),
-issue (next 2 characters), and a checksum
-most databases in WRDS only use the 8 characters. If 9 digits are passed
+`NCusip` is a type alias for `Cusip{:historical}`, representing the
+historical Cusip identifier for a security. It is a common identifier
+within and outside of WRDS.
+
+All `NCusip`s are made up of 3 parts: issuer (first 6 characters),
+issue (next 2 characters), and a checksum.
+Most databases in WRDS only use the 8 characters. If 9 digits are passed
 or the checksum is explicitly passed, the checksum is validated and
 a warning is given if it is an invalid checksum.
 
 !!! note
-    `NCusip` is different than [`Cusip`](@ref). The standard in
-    CRSP (and some other WRDS datasets) is that `Cusip` represents
-    the most recently available `NCusip` for a given firm, while
-    `NCusip` will provide a historical view of that firm.
+    In CRSP V1, `ncusip` was the column name for the historical Cusip.
+    In CRSP V2, the plain `cusip` column is the historical value (and
+    maps to `NCusip`), while `hdrcusip` is the current/header value
+    (mapped to [`HdrCusip`](@ref)). `NCusip` is equivalent to calling
+    `Cusip(x)` (which defaults to historical).
 
 !!! note
     `NCusip` only stores 8 characters (not the checksum digit) and,
@@ -411,64 +461,23 @@ julia> NCusip(Permno(47896), Date(2020))
 
 Related to the note on the difference between `Cusip` and `NCusip`:
 ```jldoctest
-julia> Cusip(Permno(47896), Date(2020))
+julia> HdrCusip(Permno(47896), Date(2020))
 "46625H10"
 
 julia> NCusip(Permno(47896), Date(2020))
 "46625H10"
 
-julia> Cusip(Permno(47896), Date(1998))
+julia> HdrCusip(Permno(47896), Date(1998))
 "46625H10"
 
 julia> NCusip(Permno(47896), Date(1998))
 "16161A10"
 ```
 """
-struct NCusip <: SecurityIdentifier
-    val::String
-    function NCusip(s::AbstractString)
-        if length(s) < 8
-            error("Too few characters for NCusip")
-        end
-        if length(s) > 9
-            error("Too many characters for NCusip")
-        end
-        if length(s) == 9 && luhn_checksum(s[1:8]) != parse(Int, s[9])
-            @warn("Invalid Checksum in parsing NCusip, this observation " *
-            "might not match other NCusips. To correct this error, pass " *
-            "the first 8 characters of the string instead.")
-        end
-        new(s[1:8])
-    end
-end
+const NCusip = Cusip{:historical}
+const HdrCusip = Cusip{:current}
 
-function NCusip(issuer::AbstractString, issue::AbstractString, checksum=nothing)
-    if length(issuer) != 6
-        error("Issuer identification must be 6 characters")
-    end
-    if length(issue) != 2
-        error("Issue must be 2 characters")
-    end
-    if checksum !== nothing && (!)(0 ≤ checksum ≤ 9)
-        error("Checksum must be between 0 and 9 (inclusive)")
-    elseif checksum !== nothing && luhn_checksum(issuer * issue) != checksum
-        @warn("Invalid Checksum in parsing NCusip")
-    end
-    NCusip(issuer * issue)
-end
-
-
-function value(n::NCusip, l::Int=8)
-    out = n.val
-    if l == 9
-        out * string(luhn_checksum(n.val))
-    else
-        out
-    end
-end
-
-Cusip6(x::Cusip) = Cusip6(value(x)[1:6])
-NCusip6(x::NCusip) = NCusip6(value(x)[1:6])
+Cusip6{HistCode}(c::Cusip{HistCode}) where {HistCode} = Cusip6{HistCode}(value(c))
 
 
 

@@ -5,17 +5,9 @@ DocMeta.setdocmeta!(
     WRDSMerger,
     :DocTestSetup,
     quote
-        data_dir = joinpath("..", "test", "data")
-        using CSV, DataFrames, WRDSMerger, Dates
-        files = [
-            "crsp_links",
-            "crsp_comp_links",
-            "gvkey_cik_links",
-            "ibes_links",
-            "option_links",
-            "ravenpack_links"
-        ]
-        funs=[
+        using DuckDB, DBInterface, DataFrames, WRDSMerger, Dates
+        db = DBInterface.connect(DuckDB.DB, joinpath("..", "test", "data", "test_data_final.duckdb"))
+        funs = [
             generate_crsp_links,
             generate_comp_crsp_links,
             generate_comp_cik_links,
@@ -23,13 +15,10 @@ DocMeta.setdocmeta!(
             generate_option_crsp_links,
             generate_ravenpack_links
         ]
-        for (file, fun) in zip(files, funs)
-            fun(
-                DataFrame(
-                    CSV.File(joinpath(data_dir, file * ".csv"))
-                )
-            )
+        for fun in funs
+            fun(db)
         end
+        create_all_links()
     end;
     recursive=true
 )
