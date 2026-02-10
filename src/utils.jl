@@ -110,6 +110,14 @@ function run_sql_query(
     df
 end
 
+"""
+    Conditions(fun::Function, l::Union{Symbol,String}, r::Union{Symbol,String})
+    Conditions(l, fun, r)
+
+A condition for use with [`range_join`](@ref). Specifies a comparison function `fun`
+(e.g., `<=`, `>=`) applied between column `l` from the left DataFrame and column `r`
+from the right DataFrame.
+"""
 struct Conditions
     fun::Function
     l::Union{Symbol, String}

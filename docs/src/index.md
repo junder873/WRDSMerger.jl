@@ -21,38 +21,55 @@ julia> using Pkg; Pkg.add(url="https://github.com/junder873/WRDSMerger.jl")
 ```
 
 # Establish DB Connection
-This package requires a subscription to WRDS and can only access datasets that are included in your subscription. There are several ways to connect to the database. The simplest and most reliable is to use [LibPQ.jl](https://github.com/invenia/LibPQ.jl) (requires at least v1.16 of LibPQ.jl), to initiate a connection run:
+This package requires a subscription to WRDS and can only access datasets that are included in your subscription. Any database connection that supports `DBInterface.execute` will work. There are several ways to connect:
+
+### LibPQ
+
+[LibPQ.jl](https://github.com/invenia/LibPQ.jl) connects directly to the WRDS Postgres server. It has no query length limit, which is important for functions like `crsp_data` that generate very long queries:
 
 ```julia
+using LibPQ
 conn = LibPQ.Connection(
     """
-        host = wrds-pgdata.wharton.upenn.edu 
+        host = wrds-pgdata.wharton.upenn.edu
         port = 9737
-        user='username' 
+        user='username'
         password='password'
         sslmode = 'require' dbname = wrds
     """
 )
 ```
 
-Note, running the above too many times may cause WRDS to temporarily block your connections for having too many. Run the connection at the start of your script and only rerun that part when necessary. I have found that LibPQ is the easiest way to connect to WRDS since there are no restrictions on length of query and the data has a consistent format.
+Note, running the above too many times may cause WRDS to temporarily block your connections for having too many. Run the connection at the start of your script and only rerun that part when necessary.
 
-Alternatively, you can connect to WRDS through an ODBC driver using [ODBC.jl](https://github.com/JuliaDatabases/ODBC.jl). I recommend following the setup steps listed under WRDS support for connecting with Stata (since that also uses ODBC). You can find that information [here](https://wrds-www.wharton.upenn.edu/pages/support/programming-wrds/programming-stata/stata-from-your-computer/).
+### ODBC
 
-The third method is if you download the data to your own database, such as a SQLite database using [SQLite.jl](https://github.com/JuliaDatabases/SQLite.jl) (This is the method this package uses for testing). SQLite requires slightly different names for tables, so you will need to change the table defaults:
+Alternatively, you can connect to WRDS through an ODBC driver using [ODBC.jl](https://github.com/JuliaDatabases/ODBC.jl). ODBC is considerably faster at converting large result sets to DataFrames but requires additional driver setup. I recommend following the setup steps listed under WRDS support for connecting with Stata (since that also uses ODBC). You can find that information [here](https://wrds-www.wharton.upenn.edu/pages/support/programming-wrds/programming-stata/stata-from-your-computer/).
+
+The third method is if you have the data locally, such as in a [DuckDB](https://github.com/duckdb/duckdb) database or as Parquet/CSV files. DuckDB is the recommended approach for local data (and is what this package uses for testing). DuckDB can read Parquet, CSV, and other file formats directly:
 
 ```julia
-conn = SQLite.DB("db.sqlite")
-WRDSMerger.default_tables["comp_funda"] = "compa_funda"
-WRDSMerger.default_tables["comp_fundq"] = "compa_fundq"
-...
+using DuckDB
+conn = DBInterface.connect(DuckDB.DB, "my_wrds_data.duckdb")
 ```
 
-## ODBC vs LibPQ
+If your DuckDB database uses different schema/table names than the WRDS defaults, update the table mappings:
 
-The two largest packages I am aware of for connecting to a Postgres database in Julia are [ODBC.jl](https://github.com/JuliaDatabases/ODBC.jl) and [LibPQ.jl](https://github.com/invenia/LibPQ.jl). Both of these have various advantages.
+```julia
+WRDSMerger.default_tables["comp_funda"] = "comp.funda"
+WRDSMerger.default_tables["crsp_stocknames"] = "crsp.stocknames"
+# ... etc.
+```
 
-Starting with LibPQ, adding LibPQ to your project is the full installation process. To use ODBC, an extra driver, with extra setup, needs to occur before use. In addition, as far as I can tell, LibPQ does not have a limit on length of query. Some functions in this package (such as `crsp_data`) create exceptionally long queries to reduce the total amount of data downloaded, which LibPQ handles easily.
+See [Using Local Files with DuckDB](@ref) for more details on working with local files.
 
-For ODBC, it is considerably faster at converting data to a DataFrame. For example, downloading the full CRSP Stockfile (`crsp.dsf`, which includes returns for every stock for each day and is about 100 million rows), takes about 4 minutes to download and make into a DataFrame with ODBC on a gigabit connection. LibPQ takes about 24 minutes. Most of this difference appears to be type instability while converting the LibPQ result to a DataFrame, since the initial LibPQ result only takes a minute and `@time` reports 80% garbage collection time. ODBC also stores your password separately (in the driver settings) making it a little easier to share a project without compromising your password.
+## Connection Method Comparison
+
+| Method | Setup | Speed | Query Length | Best For |
+|--------|-------|-------|--------------|----------|
+| **LibPQ** | `Pkg.add("LibPQ")` only | Slower for large results | No limit | General WRDS access |
+| **ODBC** | Requires driver installation | Fast for large DataFrames | May have limits | Bulk data downloads |
+| **DuckDB** | `Pkg.add("DuckDB")` only | Very fast (local I/O) | No limit | Local data / testing |
+
+LibPQ requires no setup beyond installation. ODBC is considerably faster at converting large result sets to DataFrames (e.g., downloading the full CRSP daily stockfile takes ~4 minutes with ODBC vs ~24 minutes with LibPQ on a gigabit connection), but requires an ODBC driver to be installed separately. ODBC also stores your password in the driver settings, making it easier to share a project without exposing credentials. DuckDB is only for local data (Parquet, CSV, or DuckDB database files) and cannot connect to the WRDS Postgres server.
 

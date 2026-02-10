@@ -1,58 +1,76 @@
 
 """
-This function looks for overlapping periods. It takes a list of all dates
-and checks if individual sub periods are a subset of multiple periods.
-"""
-function identify_overlaps(dts1::AbstractVector, dts2::AbstractVector)
-    out = Set{Date}()
-    cur_dates = sort(vcat(dts1, dts2))
-    for i in 1:length(cur_dates)-1
-        c = 0
-        for j in eachindex(dts1, dts2)
-            if cur_dates[i] >= dts1[j] && cur_dates[i+1] <= dts2[j]
-                c += 1
-            end
-        end
-        if c ≥ 2
-            push!(out, cur_dates[i])
-            push!(out, cur_dates[i+1])
-        end
-    end
-    out
-end
-
-"""
 This function tests whether there are any dates that are in multiple
 `AbstractLinkPair`s and those links have equivalent priority. If this function
 returns `true`, then there is at least a date where there is no distinction
 between two links. The way [`choose_best_match`](@ref) works, the first in
 the vector will be chosen.
+
+The algorithm uses a sweep-line approach: intervals are sorted by start date
+to efficiently find overlapping pairs. When an overlap between two links with
+different children is found, a representative date is checked against *all*
+active links to determine whether a higher-priority link resolves the tie.
+This avoids false positives where two low-priority links tie but a third
+higher-priority link takes precedence.
 """
 function check_priority_errors(data::AbstractVector{T}) where {T<:AbstractLinkPair}
-    if length(data) == 1
-        return false
+    n = length(data)
+    n ≤ 1 && return false
+
+    # Fast path: if every link maps to the same child, overlapping
+    # intervals can never cause an ambiguous conflict.
+    first_child = childID(data[1])
+    all_same = true
+    for i in 2:n
+        if childID(data[i]) != first_child
+            all_same = false
+            break
+        end
     end
-    dates_to_check = identify_overlaps(min_date.(data), max_date.(data))
-    for d in dates_to_check
-        possible = T[]
-        for v in data
-            if d in v
-                push!(possible, v)
+    all_same && return false
+
+    # Collect all unique boundary dates, sort them. The set of active
+    # links only changes at these boundaries, so checking at each
+    # boundary is sufficient to find all conflicts.
+    boundary_dates = Set{Date}()
+    for v in data
+        push!(boundary_dates, min_date(v))
+        push!(boundary_dates, max_date(v))
+    end
+    sorted_dates = sort!(collect(boundary_dates))
+
+    # Pre-sort data by start date to allow early termination when
+    # scanning for active links at a given date.
+    perm = sortperm(data; by=min_date)
+
+    # Reusable buffer for links active at a given date
+    possible = T[]
+
+    for d in sorted_dates
+        # Find all links active on this date using sorted order
+        empty!(possible)
+        for idx in 1:n
+            k = perm[idx]
+            min_date(data[k]) > d && break  # remaining links start after d
+            if max_date(data[k]) >= d
+                push!(possible, data[k])
             end
         end
-        best = 0
-        for (i, v) in enumerate(possible)
-            # either first or the current one is higher priority
-            if best == 0 || is_higher_priority(possible[i], possible[best])
+
+        length(possible) ≤ 1 && continue
+
+        # Find the highest-priority link
+        best = 1
+        for i in 2:length(possible)
+            if is_higher_priority(possible[i], possible[best])
                 best = i
             end
         end
+
+        # Check whether any other link ties the best with a different child
         for i in 1:length(possible)
-            if i == best
-                continue
-            end
+            i == best && continue
             if !(is_higher_priority(possible[best], possible[i])) && childID(possible[i]) != childID(possible[best])
-                # println(possible)
                 return true
             end
         end
@@ -71,14 +89,15 @@ function Base.Dict(data::AbstractVector{L}) where {T1, T2, L<:AbstractLinkPair{T
     out = Dict{T1, Vector{L}}()
     sizehint!(out, length(data))
     for v in data
-        if !haskey(out, parentID(v))
-            out[parentID(v)] = Vector{L}()
-        end
-        push!(out[parentID(v)], v)
+        vec = get!(Vector{L}, out, parentID(v))
+        push!(vec, v)
     end
-    temp = check_priority_errors.(values(out))
-    if any(temp)
-        @warn("There are $(sum(temp)) cases of overlapping identifiers linking " *
+    error_count = 0
+    for group in values(out)
+        error_count += check_priority_errors(group)
+    end
+    if error_count > 0
+        @warn("There are $error_count cases of overlapping identifiers linking " *
         "$T1 -> $T2 that do not have a priority, this might create unintended links")
     end
     out
@@ -90,14 +109,27 @@ end
         ::Type{T1},
         ::Type{T2},
         df::DataFrame,
-        cols...
+        sym1::Symbol,
+        sym2::Symbol,
+        dt1::Union{Symbol, Missing}=missing,
+        dt2::Union{Symbol, Missing}=missing,
+        priority_sym::Union{Symbol, Missing}=missing,
+        priority_sym2::Union{Symbol, Missing}=missing
     ) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier, LP<:AbstractLinkPair}
 
-Generic function that creates an AbstractLinkPair based on the types
-and a DataFrame. `cols...` should be a list of column names in the DataFrame,
-the first being ready to convert to type T1 and the second ready to convert
-to type T2. This function returns a tuple of two dictionaries:
-`(Dict{T1, LP{T1, T2}},Dict{T2, LP{T2, T1}})`
+Generic function that creates an `AbstractLinkPair` based on the types
+and a DataFrame. `sym1` and `sym2` are the column names in `df` whose values
+will be converted to types `T1` and `T2`, respectively. `dt1` and `dt2` are
+optional column names for the start and end dates of each link. `priority_sym`
+is an optional column name used as the priority when building links from `T1`
+to `T2`, and `priority_sym2` is an optional separate priority column for the
+reverse (`T2` to `T1`) direction; when `priority_sym2` is `missing`, `priority_sym`
+is used for both directions, and when both are `missing` a default priority of
+`0.0` is used.
+
+The function selects only the relevant columns, drops rows where `sym1` or
+`sym2` are `missing`, and returns a tuple of two dictionaries:
+`(Dict{T1, LP{T1, T2}}, Dict{T2, LP{T2, T1}})`
 which is easily passed to [`new_link_method`](@ref).
 
 ## Example
@@ -120,16 +152,45 @@ function create_link_pair(
     ::Type{T1},
     ::Type{T2},
     df::DataFrame,
-    cols...
+    sym1::Symbol,
+    sym2::Symbol,
+    dt1::Union{Symbol, Missing}=missing,
+    dt2::Union{Symbol, Missing}=missing,
+    priority_sym::Union{Symbol, Missing}=missing,
+    priority_sym2::Union{Symbol, Missing}=missing
 ) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier, LP<:AbstractLinkPair}
-    df = select(df, cols...) |> unique
-    cols1 = [cols...]
-    cols2 = [cols[2], cols[1], cols[3:end]...]
-    dropmissing!(df, [cols[1], cols[2]])
-    df[!, cols[1]] = T1.(df[:, cols[1]])
-    df[!, cols[2]] = T2.(df[:, cols[2]])
-    data1 = [LP(x...) for x in Tuple(eachrow(df[:, cols1]))]
-    data2 = [LP(x...) for x in Tuple(eachrow(df[:, cols2]))]
+    cols = [sym1, sym2]
+    if !ismissing(dt1)
+        push!(cols, dt1)
+    end
+    if !ismissing(dt2)
+        push!(cols, dt2)
+    end
+    if !ismissing(priority_sym)
+        push!(cols, priority_sym)
+    end
+    if !ismissing(priority_sym2) && priority_sym2 != priority_sym
+        push!(cols, priority_sym2)
+    end
+    df = select(df, cols) |> unique
+
+    dropmissing!(df, [sym1, sym2])
+    df[!, sym1] = T1.(df[:, sym1])
+    df[!, sym2] = T2.(df[:, sym2])
+    data1 = LP.(
+        df[:, sym1],
+        df[:, sym2],
+        ismissing(dt1) ? missing : df[:, dt1],
+        ismissing(dt2) ? missing : df[:, dt2],
+        ismissing(priority_sym) ? 0.0 : df[:, priority_sym]
+    )
+    data2 = LP.(
+        df[:, sym2],
+        df[:, sym1],
+        ismissing(dt1) ? missing : df[:, dt1],
+        ismissing(dt2) ? missing : df[:, dt2],
+        ismissing(priority_sym2) ? (ismissing(priority_sym) ? 0.0 : df[:, priority_sym]) : df[:, priority_sym2]
+    )
     (
         Dict(data1),
         Dict(data2)
@@ -138,7 +199,7 @@ end
 
 """
     generate_ibes_links(
-        conn;
+        conn,
         main_table=default_tables["wrdsapps_ibcrsphist"]
     )
 
@@ -149,17 +210,17 @@ WRDS file. If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_ibes_links(
-    conn;
+    conn,
     main_table=default_tables["wrdsapps_ibcrsphist"]
 )
-    df = download_ibes_links(conn; main_table)
+    df = download_ibes_links(conn, main_table)
     generate_ibes_links(df)
 end
 function generate_ibes_links(
     df_in::AbstractDataFrame
 )
     df = select(df_in, :ticker, :permno, :ncusip, :sdate, :edate, :score) |> copy
-    df = dropmissing(df, [:permno, :ncusip])
+    dropmissing!(df, [:permno, :ncusip])
     df[!, :priority] = 1 ./ df[:, :score]
     temp = create_link_pair(
         LinkPair,
@@ -177,7 +238,7 @@ function generate_ibes_links(
     temp = create_link_pair(
         LinkPair,
         IbesTicker,
-        Cusip,
+        NCusip,
         df,
         :ticker,
         :ncusip,
@@ -190,6 +251,10 @@ function generate_ibes_links(
     df_in
 end
 
+
+same_cusip(::Type{Cusip{HistCode}}, ::Type{Cusip6{HistCode}}) where {HistCode} = true
+same_cusip(::Type{<:AbstractIdentifier}, ::Type{<:AbstractIdentifier}) = false
+
 """
     generate_crsp_links(
         conn;
@@ -200,7 +265,7 @@ end
     generate_crsp_links(df::AbstractDataFrame)
 
 Generates the methods linking 
-Permno, Permco, Cusip, NCusip, Cusip6, NCusip6 and Ticker to each other.
+Permno, Permco, HdrCusip, NCusip, HdrCusip6, NCusip6 and Ticker to each other.
 If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 
@@ -211,11 +276,11 @@ market cap on the relevant day, but since this needs a static value, the
 default download is to average the market cap over the relevant period.
 """
 function generate_crsp_links(
-    conn;
+    conn,
     main_table=default_tables["crsp_stocknames"],
     stockfile=default_tables["crsp_stock_data"]
 )
-    df = download_crsp_links(conn; main_table, stockfile)
+    df = download_crsp_links(conn, main_table, stockfile)
     generate_crsp_links(df)
 end 
 function generate_crsp_links(
@@ -243,15 +308,14 @@ function generate_crsp_links(
         (NCusip, :ncusip),
         (NCusip6, :ncusip2),
         (Ticker, :ticker),
-        (Cusip, :cusip),
-        (Cusip6, :cusip2)
+        (HdrCusip, :cusip),
+        (HdrCusip6, :cusip2)
     ]
     for (i, v1) in enumerate(ids)
         for v2 in ids[i+1:end]
             if v1[2] == v2[2] # for when the two values are equal
                 continue
             end
-
             temp = create_link_pair(
                 LinkPair,
                 v1[1],
@@ -263,10 +327,85 @@ function generate_crsp_links(
                 :nameenddt,
                 priority_col
             )
-            if !(
-                (v1[1] == NCusip && v2[1] == NCusip6)
-                || (v1[1] == Cusip && v2[1] == Cusip6)
-            )# don't create links for NCusip -> NCusip6 or Cusip -> Cusip6
+            if !same_cusip(v1[1], v2[1])# don't create links for Cusip -> Cusip6
+            # since there is a simpler definition
+                new_link_method(temp[1])
+            end
+            new_link_method(temp[2])
+        end
+    end
+    df_in
+end
+
+"""
+    generate_crsp_links_v2(
+        conn,
+        main_table=default_tables["crsp_stocknames_v2"],
+        stockfile=default_tables["crsp_stock_data_v2"]
+    )
+
+    generate_crsp_links_v2(df::AbstractDataFrame)
+
+Generates the methods linking Permno, Permco, Cusip, NCusip, Cusip6, NCusip6 and Ticker to each other.
+If a database connection is provided, then it will download
+the table, otherwise, it can use a provided DataFrame.
+
+Somewhat confusingly, the v2 files have HdrCusip and Cusip, but the Cusip is
+equivalent to the old NCusip and the HdrCusip is equivalent to the old Cusip.
+"""
+function generate_crsp_links_v2(
+    conn,
+    main_table=default_tables["crsp_stocknames_v2"],
+    stockfile=default_tables["crsp_stock_data_v2"]
+)
+    df = download_crsp_links_v2(conn, main_table, stockfile)
+    generate_crsp_links_v2(df)
+end
+function generate_crsp_links_v2(
+    df_in::AbstractDataFrame;
+    priority_col=:mkt_cap,
+    cols = [
+        :permno,
+        :permco,
+        :cusip,
+        :hdrcusip,
+        :ticker,
+        :namedt,
+        :nameenddt
+    ]
+)
+    df = select(
+        df_in,
+        vcat(cols, priority_col)...
+    ) |> copy
+    df[!, :hdrcusip2] = df[:, :hdrcusip]
+    df[!, :cusip2] = df[:, :cusip]
+    ids = [
+        (Permno, :permno),
+        (Permco, :permco),
+        (NCusip, :cusip),
+        (NCusip6, :cusip2),
+        (Ticker, :ticker),
+        (HdrCusip, :hdrcusip),
+        (HdrCusip6, :hdrcusip2)
+    ]
+    for (i, v1) in enumerate(ids)
+        for v2 in ids[i+1:end]
+            if v1[2] == v2[2] # for when the two values are equal
+                continue
+            end
+            temp = create_link_pair(
+                LinkPair,
+                v1[1],
+                v2[1],
+                df,
+                v1[2],
+                v2[2],
+                :namedt,
+                :nameenddt,
+                priority_col
+            )
+            if !same_cusip(v1[1], v2[1])# don't create links for Cusip -> Cusip6
             # since there is a simpler definition
                 new_link_method(temp[1])
             end
@@ -278,7 +417,7 @@ end
 
 """
     generate_comp_crsp_links(
-        conn;
+        conn,
         main_table=default_tables["crsp_a_ccm_ccmxpf_lnkhist"]
     )
 
@@ -291,10 +430,10 @@ If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_comp_crsp_links(
-    conn;
+    conn,
     main_table=default_tables["crsp_a_ccm_ccmxpf_lnkhist"]
 )
-    df = download_comp_crsp_links(conn; main_table)
+    df = download_comp_crsp_links(conn, main_table)
     generate_comp_crsp_links(df)
 end
 function generate_comp_crsp_links(
@@ -319,6 +458,8 @@ function generate_comp_crsp_links(
             df[i, :lpermco] = missing
         end
     end
+    transform!(df, [:linkprim, :linktype] => ByRow((x, y) -> gvkey_crsp_priority(x, y)) => :priority1)
+    transform!(df, [:linkprim, :linktype] => ByRow((x, y) -> crsp_gvkey_priority(x, y)) => :priority2)
     ids = [
         (Permco, :lpermco),
         (Permno, :lpermno),
@@ -333,8 +474,8 @@ function generate_comp_crsp_links(
             v[2],
             :linkdt,
             :linkenddt,
-            :linkprim,
-            :linktype
+            :priority1,
+            :priority2
         )
         new_link_method(temp[1])
         new_link_method(temp[2])
@@ -357,10 +498,10 @@ If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_comp_cik_links(
-    conn;
+    conn,
     main_table=default_tables["comp_company"]
 )
-    df = download_comp_cik_links(conn; main_table)
+    df = download_comp_cik_links(conn, main_table)
     generate_comp_cik_links(df)
 end
 function generate_comp_cik_links(
@@ -408,10 +549,10 @@ If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_option_crsp_links(
-    conn;
+    conn,
     main_table=default_tables["optionm_all_secnmd"]
 )
-    df = download_option_crsp_links(conn; main_table)
+    df = download_option_crsp_links(conn, main_table)
     generate_option_crsp_links(df)
 end
 function generate_option_crsp_links(
@@ -461,8 +602,9 @@ end
 
 """
     generate_ravenpack_links(
-        conn;
-        main_table=default_tables["ravenpack_common_rp_entity_mapping"]
+        conn,
+        main_table=default_tables["ravenpack_common_rp_entity_mapping"],
+        cusip_list=default_tables["crsp.stocknames"]
     )
 
     generate_ravenpack_links(df::AbstractDataFrame)
@@ -478,10 +620,11 @@ If a database connection is provided, then it will download
 the table, otherwise, it can use a provided DataFrame.
 """
 function generate_ravenpack_links(
-    conn;
-    main_table=default_tables["ravenpack_common_rp_entity_mapping"]
+    conn,
+    main_table=default_tables["ravenpack_common_rp_entity_mapping"],
+    cusip_list=default_tables["crsp_stocknames"]
 )
-    df = download_ravenpack_links(conn; main_table)
+    df = download_ravenpack_links(conn, main_table, cusip_list)
     generate_ravenpack_links(df)
 end
 function generate_ravenpack_links(
@@ -512,9 +655,19 @@ function generate_ravenpack_links(
     df_in
 end
 
+"""
+    create_all_links()
+
+Create indirect links between all identifier types that do not yet have a direct
+link method. This should be called after all `generate_*` functions have been run.
+It finds all missing identifier pairs and creates linking methods that route through
+intermediate identifiers (preferring paths through [`Permno`](@ref), see
+[Supremacy of Permno](@ref)).
+"""
 function create_all_links()
     needed_links=all_pairs(AbstractIdentifier, AbstractIdentifier; test_fun=method_is_missing)
     base_links=all_pairs(AbstractIdentifier, AbstractIdentifier)
+    filter!(l -> l ∉ base_links, needed_links)
     for l in needed_links
         new_link_method(l...; current_links=base_links)
     end

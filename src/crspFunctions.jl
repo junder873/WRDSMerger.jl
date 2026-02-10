@@ -582,3 +582,16 @@ function crsp_adjust(
     end
     return df
 end
+
+fix_negative_prices(x::AbstractVector) = fix_negative_prices.(x)
+fix_negative_prices(x) = abs(x)
+
+adjust_price_splits(x::AbstractVector, splits::AbstractVector) = adjust_price_splits.(x, splits)
+adjust_price_splits(x, splits) = fix_negative_prices(x) / splits
+
+adjust_share_splits(x::AbstractVector, splits::AbstractVector) = adjust_share_splits.(x, splits)
+adjust_share_splits(x, splits) = x * splits
+
+adjust_delist_returns(x::AbstractVector, delist::AbstractVector) = adjust_delist_returns.(x, delist)
+adjust_delist_returns(x, delist::Missing) = x
+adjust_delist_returns(x, delist) = (1 + x) * (1 + delist) - 1

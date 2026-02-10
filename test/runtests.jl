@@ -1,22 +1,11 @@
-using SQLite, DataFrames, Dates, Test, CSV, Documenter
+using DuckDB, DataFrames, Dates, Test, Documenter
 using WRDSMerger
 
 ##
 
 
-db = SQLite.DB(joinpath("data", "sql_data.sqlite"))
+db = DBInterface.connect(DuckDB.DB, joinpath("data", "test_data_final.duckdb"))
 
-##
-WRDSMerger.default_tables["comp_funda"] = "compa_funda"
-WRDSMerger.default_tables["comp_fundq"] = "compa_fundq"
-WRDSMerger.default_tables["crsp_stocknames"] = "crsp_stocknames"
-WRDSMerger.default_tables["crsp_index"] = "crsp_dsi"
-WRDSMerger.default_tables["crsp_stock_data"] = "crsp_dsf"
-WRDSMerger.default_tables["crsp_delist"] = "crsp_dsedelist"
-WRDSMerger.default_tables["crsp_a_ccm_ccmxpf_lnkhist"] = "crsp_a_ccm_ccmxpf_lnkhist"
-WRDSMerger.default_tables["wrdsapps_ibcrsphist"] = "wrdsapps_ibcrsphist"
-WRDSMerger.default_tables["comp_company"] = "comp_company"
-WRDSMerger.default_tables["ff_factors"] = "ff_factors_daily"
 
 ##
 
@@ -44,7 +33,7 @@ df = comp_data(db; filters=Dict{String, String}()) |> dropmissing
 println(size(df))
 @test nrow(df) > 0
 
-df = comp_data(db, annual=false, cols=["gvkey", "fyearq", "datadate", "fqtr", "saleq"]) |> dropmissing
+df = comp_data(db, annual=false, cols=["gvkey", "fyearq", "datadate", "saleq"]) |> dropmissing
 println(size(df))
 @test nrow(df) > 0
 
@@ -74,7 +63,7 @@ df = comp_data(db, ["001380", "002269"]; filters=Dict{String, String}()) |> drop
 println(size(df))
 @test nrow(df) > 0
 
-df = comp_data(db, ["001380", "002269"], annual=false, cols=["gvkey", "fyearq", "datadate", "fqtr", "saleq"]) |> dropmissing
+df = comp_data(db, ["001380", "002269"], annual=false, cols=["gvkey", "fyearq", "datadate",  "saleq"]) |> dropmissing
 println(size(df))
 @test nrow(df) > 0
 
@@ -179,15 +168,6 @@ println(size(df))
 
 ##
 
-data_dir = joinpath("data")
-files = [
-    "crsp_links",
-    "crsp_comp_links",
-    "gvkey_cik_links",
-    "ibes_links",
-    "option_links",
-    "ravenpack_links"
-]
 funs=[
     generate_crsp_links,
     generate_comp_crsp_links,
@@ -196,12 +176,8 @@ funs=[
     generate_option_crsp_links,
     generate_ravenpack_links
 ]
-for (file, fun) in zip(files, funs)
-    fun(
-        DataFrame(
-            CSV.File(joinpath(data_dir, file * ".csv"))
-        )
-    )
+for fun in funs
+    fun(db)
 end
 create_all_links()
 

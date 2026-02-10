@@ -11,6 +11,7 @@ WRDSMerger.convert_identifier
 
 This packages primary storage method for links is an `AbstractLinkPair`, which is typically a `LinkPair`:
 ```@docs
+AbstractLinkPair
 LinkPair
 ```
 
@@ -88,6 +89,7 @@ While this case is not used by default in this package, following similar method
 
 ```@docs
 WRDSMerger.download_crsp_links
+WRDSMerger.download_crsp_links_v2
 WRDSMerger.download_comp_crsp_links
 WRDSMerger.download_comp_cik_links
 WRDSMerger.download_ibes_links
@@ -177,13 +179,22 @@ WRDSMerger.create_link_pair
 
 Since this returns a tuple of dictionaries, each needs to be passed to `new_link_method` to create the bidirectional links. Then, to create links beyond just T1 <-> T2, call `create_all_links()`.
 
+## Core Functions
+
+```@docs
+create_all_links
+WRDSMerger.download_all_links
+```
+
 ## Other Functions
 
 ```@docs
 WRDSMerger.choose_best_match
 WRDSMerger.check_priority_errors
 WRDSMerger.is_higher_priority
-WRDSMerger.identify_overlaps
 WRDSMerger.value
 WRDSMerger.all_pairs
+WRDSMerger.identifier_data
+WRDSMerger.crsp_gvkey_priority
+WRDSMerger.gvkey_crsp_priority
 ```
