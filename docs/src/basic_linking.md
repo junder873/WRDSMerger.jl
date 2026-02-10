@@ -45,7 +45,7 @@ The generate functions return the DataFrame that is downloaded so you can save i
 
 This package also provides a simple function that runs all of these:
 ```julia
-julia> download_all_links(conn)
+julia> WRDSMerger.download_all_links(conn)
 ```
 Which downloads all 6 default tables and returns those 6 DataFrames. Note that if your WRDS account lacks access to one of the tables, you need to change which items are downloaded.
 

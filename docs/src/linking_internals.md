@@ -183,7 +183,7 @@ Since this returns a tuple of dictionaries, each needs to be passed to `new_link
 
 ```@docs
 create_all_links
-download_all_links
+WRDSMerger.download_all_links
 ```
 
 ## Other Functions
@@ -192,7 +192,6 @@ download_all_links
 WRDSMerger.choose_best_match
 WRDSMerger.check_priority_errors
 WRDSMerger.is_higher_priority
-WRDSMerger.identify_overlaps
 WRDSMerger.value
 WRDSMerger.all_pairs
 WRDSMerger.identifier_data

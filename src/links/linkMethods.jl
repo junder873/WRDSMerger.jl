@@ -200,6 +200,40 @@ function add_subtypes!(out::Vector{DataType}, a::Type{<:AbstractIdentifier})
     out
 end
 
+"""
+    all_pairs(
+        a::Type{<:AbstractIdentifier},
+        b::Type{<:AbstractIdentifier}=a;
+        out = Vector{Tuple{DataType, DataType}}(),
+        test_fun = base_method_exists
+    )
+
+Returns a vector of `(T1, T2)` tuples representing every concrete identifier
+pair for which `test_fun(T1, T2)` returns `true`. Both `a` and `b` are
+expanded to their concrete subtypes (via [`InteractiveUtils.subtypes`](@ref))
+before testing, and self-pairs (`T1 == T2`) are skipped.
+
+By default, `test_fun` is `base_method_exists`, which checks whether an
+[`identifier_data`](@ref) method exists for the pair — i.e., whether a
+direct link table has been loaded. This makes `all_pairs` useful for
+discovering which direct links are currently available.
+
+!!! note
+    `all_pairs` can be slow because it must inspect methods for every
+    combination of concrete subtypes. When creating many indirect links
+    with [`new_link_method`](@ref), call `all_pairs` once and pass the
+    result via the `current_links` keyword to avoid repeated work.
+
+# Examples
+
+```julia
+# All direct links currently loaded:
+all_pairs(AbstractIdentifier, AbstractIdentifier)
+
+# Check which pairs are still missing a convert_identifier method:
+all_pairs(AbstractIdentifier, AbstractIdentifier; test_fun=method_is_missing)
+```
+"""
 function all_pairs(
     a::Type{<:AbstractIdentifier},
     b::Type{<:AbstractIdentifier};
