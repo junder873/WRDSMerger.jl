@@ -118,7 +118,7 @@ function LinkPair(
     dt1::String,
     dt2::String,
     priority::Real=0.0
-)
+) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier}
     LinkPair(t1, t2, Date(dt1), Date(dt2), priority)
 end
 function LinkPair(
@@ -127,7 +127,7 @@ function LinkPair(
     dt1::String,
     dt2::Missing,
     priority::Real=0.0
-)
+) where {T1<:AbstractIdentifier, T2<:AbstractIdentifier}
     LinkPair(t1, t2, Date(dt1), missing, priority)
 end
 
