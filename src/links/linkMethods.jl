@@ -210,7 +210,7 @@ end
 
 Returns a vector of `(T1, T2)` tuples representing every concrete identifier
 pair for which `test_fun(T1, T2)` returns `true`. Both `a` and `b` are
-expanded to their concrete subtypes (via [`InteractiveUtils.subtypes`](@ref))
+expanded to their concrete subtypes (via `InteractiveUtils.subtypes`)
 before testing, and self-pairs (`T1 == T2`) are skipped.
 
 By default, `test_fun` is `base_method_exists`, which checks whether an
